@@ -1,0 +1,55 @@
+# Cloud Build configuration for deploying REVERIE to Cloud Run
+# Usage: gcloud builds submit --config cloudbuild.yaml .
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/reverie:latest'
+      - '.'
+    timeout: '600s'
+
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/reverie:latest']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'reverie'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/reverie:latest'
+      - '--region'
+      - 'us-east1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
+      - '--timeout'
+      - '3600s'
+      - '--max-instances'
+      - '1'
+      - '--concurrency'
+      - '80'
+      - '--min-instances'
+      - '0'
+      - '--set-env-vars'
+      - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GCS_RENDER_BUCKET=reverio-render-bucket,OMNI_MODEL_ID=gemini-omni-flash-preview,OMNI_DAILY_CLIP_BUDGET=100,MAX_CONTINUITY_RETAKES_PER_FILM=4,ALLOW_PARTIAL_FILMS=true'
+
+images:
+  - 'gcr.io/$PROJECT_ID/reverie:latest'
+
+timeout: '900s'
+
+substitutions: {}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

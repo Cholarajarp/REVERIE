@@ -1,0 +1,35 @@
+# ── Google Cloud (required by hackathon rules) ────────────────────────────────
+# Accepted SDK: google-cloud-aiplatform (covers Gemini, ADK)
+google-cloud-aiplatform[agent_engines,adk]>=1.101.0
+# Current Interaction API client used by Gemini Omni Flash. Pin the major line
+# because Interactions is preview and has had breaking schema changes.
+google-genai>=2.6.0,<3.0.0
+google-cloud-firestore>=2.11.1
+google-cloud-texttospeech>=2.16.0
+google-cloud-storage>=2.10.0
+google-cloud-logging>=3.8.0
+
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi>=0.103.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+slowapi>=0.1.8
+# Async HTTP — used by DirectorAgent.get_system_health() to call Grafana REST API
+httpx>=0.27.0
+
+# ── OpenTelemetry (traces agent decisions → Grafana Cloud) ────────────────────
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-gcp-trace>=1.5.0
+
+# ── CRDT state sync (audience WebSocket feed) ─────────────────────────────────
+pycrdt>=0.8.0
+
+# ── Redis (multi-instance leader election + CRDT replication) ─────────────────
+# Needs >=5.0 for redis.asyncio.
+redis>=5.0.0
+
+# ── MCP (reality_mcp.py custom MCP server) ────────────────────────────────────
+mcp>=1.0.0
+ffmpeg-python>=0.2.0

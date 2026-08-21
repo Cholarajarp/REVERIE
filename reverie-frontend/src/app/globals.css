@@ -1,0 +1,60 @@
+/**
+ * Layer order is load-bearing: Astryx tokens must be registered before
+ * Tailwind generates utilities, otherwise `bg-surface` / `text-primary`
+ * resolve to nothing. Order per @astryxdesign/core/tailwind-theme.css.
+ */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/core/tailwind-theme.css";
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/*
+ * Astryx resolves its palette through CSS `light-dark()`, so `color-scheme`
+ * is what actually selects dark values for any token the active theme does
+ * not override. Without this, unset tokens fall back to their LIGHT values.
+ * Keyed off the data-theme attribute set by ReverieThemeProvider so the
+ * existing theme toggle keeps working; dark is the SSR default.
+ */
+:root,
+[data-theme="dark"],
+[data-theme="matcha"] {
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-background-body);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+}
+
+/* Shared input style used across Studio forms */
+.input-field {
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  font-family: var(--font-family-body);
+  color: #fff;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input-field::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+.input-field:focus {
+  border-color: var(--color-accent);
+}
+select.input-field {
+  cursor: pointer;
+  background-color: rgba(0, 0, 0, 0.5);
+}

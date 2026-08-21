@@ -1,0 +1,13 @@
+# Development and test dependencies. NOT installed into the production image:
+# the Dockerfile installs requirements.txt only.
+#
+# Kept separate deliberately -- lupa builds a LuaJIT C extension, which would add
+# build weight and attack surface to the Cloud Run image for zero runtime benefit.
+-r requirements.txt
+
+# Exercises RedisBroadcaster without a live Memorystore instance.
+fakeredis>=2.20.0
+# fakeredis needs this to evaluate the sliding-window Lua script.
+lupa>=2.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

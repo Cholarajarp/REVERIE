@@ -1,0 +1,3 @@
+- generic [active] [ref=e1]:
+  - heading "REVERIE" [level=1] [ref=e2]
+  - paragraph [ref=e3]: Frontend not built. Run npm run build in reverie-frontend/

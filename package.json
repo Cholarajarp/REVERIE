@@ -1,0 +1,22 @@
+{
+  "name": "reverie",
+  "private": true,
+  "version": "1.0.0",
+  "description": "REVERIE — The First Living Film. Autonomous multi-agent AI platform built with Google Cloud and Grafana MCP.",
+  "scripts": {
+    "dev": "cd reverie-frontend && npm run dev",
+    "start": "cd reverie-frontend && npm run start",
+    "build": "cd reverie-frontend && npm run build",
+    "clean": "rm -rf reverie-frontend/.next",
+    "lint:py": "python3 -m py_compile main.py agents/*.py core/*.py"
+  },
+  "dependencies": {
+    "@astryxdesign/cli": "^0.1.8",
+    "@astryxdesign/core": "^0.1.8",
+    "@astryxdesign/theme-gothic": "^0.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "~5.8.2"
+  }
+}

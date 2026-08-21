@@ -1,0 +1,6 @@
+{
+  "name": "REVERIE Python Backend",
+  "description": "Production-ready Python FastAPI backend foundation for agentic simulations using Pydantic V2 and Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
