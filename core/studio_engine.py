@@ -144,22 +144,32 @@ class StudioEngine:
                     f"The Omni continuity harness renders {OMNI_CLIP_DURATION_SECONDS}-second clips. "
                     "This keeps the stateful shot plan and final edit honest."
                 )
-            duration_minutes = int(film_duration_minutes)
-            if duration_minutes < 1:
-                raise ValueError("Film duration must be at least one minute.")
+            raw = int(film_duration_minutes)
+            if is_ad_style(visual_style):
+                # For ads the UI sends duration in SECONDS (20 or 40).
+                # Accept any value >= 10 seconds.
+                if raw < 10:
+                    raise ValueError("Ad duration must be at least 10 seconds.")
+                target_duration_seconds = raw
+            else:
+                # Drama films: value is in minutes, minimum 1.
+                if raw < 1:
+                    raise ValueError("Film duration must be at least one minute.")
+                target_duration_seconds = raw * 60
         except (TypeError, ValueError) as exc:
             return {"status": "error", "detail": str(exc)}
 
-        target_duration_seconds = duration_minutes * 60
         total_clips = math.ceil(target_duration_seconds / OMNI_CLIP_DURATION_SECONDS)
+        # Minimum 1 clip — a 20s ad = 2 clips, a 40s ad = 4 clips
+        total_clips = max(1, total_clips)
         if total_clips > self.omni.daily_clip_budget:
-            max_minutes = (self.omni.daily_clip_budget * OMNI_CLIP_DURATION_SECONDS) // 60
+            max_seconds = self.omni.daily_clip_budget * OMNI_CLIP_DURATION_SECONDS
             return {
                 "status": "error",
                 "detail": (
-                    f"This {duration_minutes}-minute film needs {total_clips} Omni clips, but this "
-                    f"deployment has a {self.omni.daily_clip_budget}-clip daily budget. "
-                    f"Choose a shorter film (about {max_minutes} minutes maximum)."
+                    f"This production needs {total_clips} Omni clips, but only "
+                    f"{self.omni.daily_clip_budget} are available today. "
+                    f"Maximum runtime is {max_seconds} seconds ({max_seconds // 60} minutes)."
                 ),
             }
 

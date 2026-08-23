@@ -56,6 +56,13 @@ const FILM_DURATION_OPTIONS = [
   { value: 4, label: "4 min", desc: "Daily-cap max" },
 ];
 
+// Ad durations are in SECONDS (not minutes). Sent as film_duration_minutes
+// with is_ad flag so the backend treats them as seconds.
+const AD_DURATION_OPTIONS = [
+  { value: 20, label: "20 sec", desc: "2-clip ad" },
+  { value: 40, label: "40 sec", desc: "4-clip ad" },
+];
+
 const ASPECT_RATIO_OPTIONS = [
   { value: "16:9", label: "16:9", desc: "Standard HD (Omni default)" },
   { value: "9:16", label: "9:16", desc: "Vertical / mobile" },
@@ -549,7 +556,12 @@ export default function StudioPage() {
     }
   };
 
-  const totalClips = Math.ceil((filmDuration * 60) / parseInt(videoDuration));
+  // For ad styles, filmDuration is already in seconds (20 or 40).
+  // For drama styles, filmDuration is in minutes — convert to seconds first.
+  const isAd = AD_STYLES.has(visualStyle);
+  const totalClips = isAd
+    ? Math.ceil(filmDuration / parseInt(videoDuration))
+    : Math.ceil((filmDuration * 60) / parseInt(videoDuration));
   const readyCount = characters.filter((c) => c.name.trim()).length;
 
   /* ════════════════════════════════════════════
@@ -1210,11 +1222,13 @@ export default function StudioPage() {
                 <Panel title="⚙ PRODUCTION SETTINGS" subtitle="CINEMATIC OUTPUT CONFIGURATION">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 p-1">
 
-                    {/* Film duration */}
+                    {/* Film duration — ad styles show seconds, drama shows minutes */}
                     <div className="flex flex-col gap-2">
-                      <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">🎬 Total Film Duration</label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {FILM_DURATION_OPTIONS.map((opt) => (
+                      <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">
+                        🎬 {isAd ? "Ad Duration" : "Total Film Duration"}
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(isAd ? AD_DURATION_OPTIONS : FILM_DURATION_OPTIONS).map((opt) => (
                           <button key={opt.value} onClick={() => setFilmDuration(opt.value)}
                             className={`px-2 py-2.5 rounded border text-center text-xs font-mono transition-all cursor-pointer ${
                               filmDuration === opt.value ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)] font-bold" : "border-white/10 text-white/50 hover:border-white/25"
@@ -1224,7 +1238,10 @@ export default function StudioPage() {
                           </button>
                         ))}
                       </div>
-                      <p className="text-[9px] font-mono text-white/25 mt-0.5">≈ {totalClips} clips will be generated</p>
+                      <p className="text-[9px] font-mono text-white/25 mt-0.5">
+                        ≈ {totalClips} clip{totalClips !== 1 ? "s" : ""} will be generated
+                        {isAd && <span className="text-yellow-400/60"> · Ad mode</span>}
+                      </p>
                     </div>
 
                     {/* Clip duration */}
@@ -1259,7 +1276,15 @@ export default function StudioPage() {
                       <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">Visual Style</label>
                       <div className="flex flex-col gap-1.5">
                         {STYLE_OPTIONS.map((opt) => (
-                          <Chip key={opt.value} selected={visualStyle === opt.value} onClick={() => setVisualStyle(opt.value)}>
+                          <Chip key={opt.value} selected={visualStyle === opt.value} onClick={() => {
+                            setVisualStyle(opt.value);
+                            // Reset duration to sensible default when switching style
+                            if (AD_STYLES.has(opt.value)) {
+                              setFilmDuration(20); // default 20-second ad
+                            } else if (AD_STYLES.has(visualStyle)) {
+                              setFilmDuration(1);  // back to 1 minute for drama
+                            }
+                          }}>
                             <span>{opt.icon}</span>
                             <span className="font-bold ml-1">{opt.label}</span>
                             <span className="opacity-55 ml-2">{opt.desc}</span>
@@ -1274,7 +1299,7 @@ export default function StudioPage() {
                 <div className="p-4 rounded border border-white/8 bg-black/30 font-mono text-xs flex flex-wrap gap-x-6 gap-y-2 text-white/40">
                   <span>Characters: <strong className="text-[var(--color-accent)]">{readyCount}</strong></span>
                   <span>Assets: <strong className="text-[var(--color-accent)]">{mediaAssets.filter((a) => !a.uploading && !a.error).length}</strong></span>
-                  <span>Film: <strong className="text-[var(--color-accent)]">{filmDuration} min</strong></span>
+                  <span>Film: <strong className="text-[var(--color-accent)]">{filmDuration} {isAd ? "sec" : "min"}</strong></span>
                   <span>Clips: <strong className="text-[var(--color-accent)]">{totalClips} × {videoDuration}</strong></span>
                   <span>Ratio: <strong className="text-[var(--color-accent)]">{aspectRatio}</strong></span>
                   <span>Style: <strong className="text-[var(--color-accent)]">{visualStyle}</strong></span>
@@ -1309,7 +1334,7 @@ export default function StudioPage() {
           <p className="text-[10px] font-mono text-white/25">
             {readyCount} character{readyCount !== 1 ? "s" : ""} ·{" "}
             {mediaAssets.filter((a) => !a.uploading && !a.error).length} asset{mediaAssets.filter((a) => !a.uploading && !a.error).length !== 1 ? "s" : ""} ·{" "}
-            {filmDuration} min · {videoDuration} clips · {aspectRatio} · {visualStyle}
+            {filmDuration} {isAd ? "sec" : "min"} · {videoDuration} clips · {aspectRatio} · {visualStyle}
           </p>
         </div>
       </div>
