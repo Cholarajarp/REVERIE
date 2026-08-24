@@ -205,7 +205,7 @@ class StudioEngine:
             history_lines.append(f"=== {agent.state.name} ===")
             history_lines.extend(agent.state.memory_stream[-8:])
 
-        production_id = self._production_id(clean_characters, premise, duration_minutes, visual_style)
+        production_id = self._production_id(clean_characters, premise, target_duration_seconds // 60 or 1, visual_style)
 
         # An advertisement is not a short drama. When the requested style is a
         # commercial, the Ads Specialist plans it against the persuasive arc and
@@ -267,7 +267,7 @@ class StudioEngine:
             "settings": {
                 "video_duration": f"{OMNI_CLIP_DURATION_SECONDS}s",
                 "duration_seconds": OMNI_CLIP_DURATION_SECONDS,
-                "film_duration_minutes": duration_minutes,
+                "film_duration_minutes": raw,
                 "target_duration_seconds": target_duration_seconds,
                 "aspect_ratio": aspect_ratio,
                 "visual_style": visual_style,
