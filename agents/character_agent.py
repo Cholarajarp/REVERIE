@@ -333,11 +333,8 @@ class CharacterAgent:
         )
 
     async def _init_cache(self):
-        """Context caching is disabled: the SDK on this runtime does not support
-        the CachedContent.create() signature we need (keyword argument 'model'
-        is rejected). Running uncached adds ~400 tok/call but avoids the
-        5-10s retry storm that was causing every simulate_script call to time out.
-        Re-enable once the SDK is confirmed compatible."""
+        """Context caching is not used; each tick sends the full prompt directly.
+        cache_disabled=True skips the CachedContent path in act()."""
         self.cache_disabled = True
         return
 

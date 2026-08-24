@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing REVERIE backend services...")
     clients.init_vertex()
 
-    # Firebase auth removed for hackathon demo
+    # Authentication is handled via Vertex AI ADC on Cloud Run.
 
     # Cross-instance replication. Started BEFORE the first WebSocket is served,
     # because a client connecting to an un-hydrated instance would receive an
@@ -142,9 +142,8 @@ async def lifespan(app: FastAPI):
     # --- shutdown (SIGTERM on Cloud Run: ~10s before SIGKILL) ---
     logger.info("Shutting down REVERIE backend...")
 
-    # Note: For hackathon simplified StudioEngine, we don't have is_running state
-    # or complex shutdown routines like SimulationEngine had. 
-    # Just cancelling the task.
+    # StudioEngine does not hold persistent state across requests; cancel the
+    # in-flight render task if one is running.
     if _studio_task and not _studio_task.done():
         try:
             await asyncio.wait_for(asyncio.shield(_studio_task), timeout=3.0)
@@ -439,8 +438,7 @@ async def render_status():
 
 @app.websocket("/ws/whispers")
 async def websocket_whispers(websocket: WebSocket):
-    # Completely open websocket for hackathon demo
-    user_id = f"hackathon_viewer_{id(websocket)}"
+    user_id = f"viewer_{id(websocket)}"
     await audience_websocket_endpoint(websocket, user_id=user_id)
 
 # ── Asset Upload ─────────────────────────────────────────────────────────────
