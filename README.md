@@ -72,67 +72,64 @@ Professional video production requires: scriptwriting → casting → shot plann
 
 ## 🏛️ Architecture
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the complete system design, data flows, trust model, and all Mermaid diagrams.
+Full system design, data flows, sequence diagrams, and trust model: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
-### Pipeline Overview
+```mermaid
+flowchart TB
+    User([User — Browser])
 
-```
-ONE-LINE PREMISE
-       │
-       ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    REVERIE on Cloud Run                         │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    PRE-PRODUCTION                        │   │
-│  │                                                          │   │
-│  │  CharacterAgents (N)    →    Screenwriter                │   │
-│  │  Gemini 3.5 Flash             Gemini 3.5 Flash           │   │
-│  │  Table read · memory          Exact shot list            │   │
-│  │  Goal pursuit · drama         ceil(runtime÷10) scenes    │   │
-│  └───────────────────────────┬──────────────────────────────┘   │
-│                               │                                 │
-│                               ▼                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                 PRODUCTION (per shot)                    │   │
-│  │                                                          │   │
-│  │  CinematographerAgent                                    │   │
-│  │  CHARACTER BIBLE at top of every prompt                  │   │
-│  │  Deterministic — no LLM call per scene                   │   │
-│  │           │                                              │   │
-│  │           ▼                                              │   │
-│  │  Gemini Omni Flash (gemini-omni-flash-preview)           │   │
-│  │  10-second clip + native audio                           │   │
-│  │  previous_interaction_id stateful chain                  │   │
-│  │           │                                              │   │
-│  │           ▼                                              │   │
-│  │  DirectorAgent (visual continuity gate)                  │   │
-│  │  Vertex AI multimodal — watches every MP4                │   │
-│  │  continuity_score ≥ 0.78                                 │   │
-│  │  identity_match ≥ 0.80                                   │   │
-│  │  shot_adherence ≥ 0.72                                   │   │
-│  │  Accepted → film chain   Rejected → retake or fail       │   │
-│  └───────────────────────────┬──────────────────────────────┘   │
-│                               │                                 │
-│                               ▼                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    POST-PRODUCTION                       │   │
-│  │                                                          │   │
-│  │  VideoEditor (FFmpeg)                                    │   │
-│  │  Concat accepted clips · preserve native audio           │   │
-│  │  Trim final clip to exact target runtime                 │   │
-│  │  Upload final film to GCS                                │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │           Next.js Frontend (static export)               │   │
-│  │  Studio → Screenplay Review → Screening Room             │   │
-│  │  Served from same container on port 8080                 │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-       │
-       ▼
-  FINAL FILM (MP4 · exact runtime · native audio · GCS URL)
+    subgraph CloudRun["Cloud Run — reverie (port 8080)"]
+        Frontend["Next.js Frontend\nStudio · Screenplay Review · Screening Room"]
+        API["FastAPI Backend\nmain.py — API routes + frontend mount"]
+
+        subgraph Agents["Agent Layer — 4 Agents"]
+            CA["CharacterAgent ×N\nGemini 3.5 Flash\nMemory · Goal pursuit · Anti-repetition"]
+            DA["DirectorAgent\nGemini 3.5 Flash + ADK\nDrama scoring · Visual critic · Grafana gate"]
+            CINE["CinematographerAgent\nDeterministic — no LLM per scene\nCHARACTER BIBLE builder"]
+            ADS["AdsSpecialistAgent\nGemini 3.5 Flash\nCampaign brief · Persuasive arc · Compliance"]
+        end
+
+        subgraph Core["Core Pipeline"]
+            SE["StudioEngine\nOrchestrates all phases\nContinuity state machine"]
+            OP["OmniPipeline\nGemini Omni Flash\nStateful interaction chain\nBudget reservation"]
+            VE["VideoEditor\nFFmpeg concat\nExact runtime trim"]
+        end
+    end
+
+    subgraph GCP["Google Cloud Managed Services"]
+        OMNI["Gemini Omni Flash\ngemini-omni-flash-preview\nVideo + native audio"]
+        GEMINI["Gemini 3.5 Flash\nVertex AI\nPlanning · Critique · Cast generation"]
+        FS[("Cloud Firestore\nScene records\nCharacter memory\nOmni budget counter")]
+        GCS[("Cloud Storage\nOmni clips\nFinal film MP4")]
+        TRACE["Cloud Trace\nOpenTelemetry\nW3C distributed traces"]
+        REDIS["Redis / Memorystore\nLeader election\nCRDT replication"]
+    end
+
+    GRAFANA["Grafana Cloud\nHealth gate\nAlerting API"]
+
+    User --> Frontend
+    Frontend --> API
+    API --> SE
+    SE --> CA
+    SE --> DA
+    SE --> CINE
+    SE --> ADS
+    SE --> OP
+    SE --> VE
+    CA --> GEMINI
+    DA --> GEMINI
+    DA --> GRAFANA
+    ADS --> GEMINI
+    OP --> OMNI
+    OP --> FS
+    OP --> GCS
+    VE --> GCS
+    SE --> FS
+    API --> TRACE
+    SE --> TRACE
+    OP --> TRACE
+    DA --> TRACE
+    SE --> REDIS
 ```
 
 ---
@@ -152,14 +149,6 @@ Every integration is **live** — not mocked, not simulated.
 | **Cloud Run** | `cloudbuild.yaml` | Single-container deployment: FastAPI backend + Next.js frontend on port 8080 |
 | **Cloud Build** | `cloudbuild.yaml` | Multi-stage Docker build → push → deploy pipeline |
 | **OpenTelemetry → Cloud Trace** | `opentelemetry-exporter-gcp-trace` | Traces every agent decision, Omni call, and Director review with W3C trace context |
-
-### Mandatory Requirements — All Met
-
-| Requirement | Status | Evidence |
-|---|---|---|
-| Gemini 3.5 or newer via Gemini API or Vertex AI | ✅ | `CharacterAgent`, `DirectorAgent`, `StudioEngine` all call `GenerativeModel("gemini-3.5-flash")` |
-| At least one Google Agent Framework (ADK / GenAI SDK / GenKit) | ✅ | `DirectorAgent` uses `adk.Agent`; `OmniPipeline` uses `google-genai` SDK |
-| At least one Google Cloud infrastructure service | ✅ | Cloud Run (deployed), Firestore (state), Cloud Storage (clips), Cloud Build (CI/CD) |
 
 ---
 
