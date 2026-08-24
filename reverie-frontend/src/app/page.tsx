@@ -133,7 +133,7 @@ export default function LandingPage() {
               >
                 <motion.div variants={itemVariants} className="flex items-center gap-3 flex-wrap justify-center">
                   <Badge label="GOOGLE CLOUD HACKATHON 2026" variant="accent" />
-                  <Badge label="Gemini 2.5 Flash + Omni" variant="secondary" />
+                  <Badge label="Gemini 3.5 Flash + Omni" variant="secondary" />
                 </motion.div>
 
                 <motion.h1
@@ -201,7 +201,7 @@ export default function LandingPage() {
                   <FeaturedCard
                     badge="STANFORD ARCHITECTURE"
                     title="Autonomous Agents"
-                    subtitle="Gemini 2.5 Flash"
+                    subtitle="Gemini 3.5 Flash"
                     description="Persistent associative memory streams, cognitive reflection loops, and dynamic spatial pathfinding drive unscripted, believable character improvisation across the town."
                   />
                 </div>
@@ -209,7 +209,7 @@ export default function LandingPage() {
                   <FeaturedCard
                      badge="GEMINI OMNI"
                      title="Cinematic Rendering"
-                     subtitle="GEMINI 2.5 FLASH DIRECTOR"
+                     subtitle="GEMINI 3.5 FLASH DIRECTOR"
                      description="An autonomous Director monitors tension in real time. When drama beats cross critical thresholds, it prompts Gemini Omni to generate photorealistic 16:9 cinematic video scenes up to 10 seconds long."
                    />
                 </div>

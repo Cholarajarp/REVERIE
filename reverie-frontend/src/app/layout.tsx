@@ -7,7 +7,7 @@ import { ReverieThemeProvider } from "../components/ui/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "REVERIE | The First Living Film",
-  description: "Autonomous Agentic Simulation System & Living Film powered by Gemini 2.5 Flash & Gemini Omni",
+  description: "Autonomous Agentic Simulation System & Living Film powered by Gemini 3.5 Flash & Gemini Omni",
 };
 
 export default function RootLayout({
