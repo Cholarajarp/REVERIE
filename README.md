@@ -44,9 +44,9 @@ You type a premise like *"A detective hunts a ghost in a rain-soaked 1940s city"
 ## 🎥 Live Demo
 
 > **► Deployed on Google Cloud Run** *(URL shared privately with judges)*
-> **[► Watch Demo Video on YouTube](#)** *(link your 4-min demo video here)*
+> **[► Watch Demo Video on YouTube](https://youtu.be/7G9z0wmMJcI)**
 
-**Deployed to:** `gen-lang-client-0467881140` · Region: `us-east1` · Build: `37802503-70a4-46d3-9025-d6cd3248b8a5`
+**Deployed to:** `gen-lang-client-0467881140` · Region: `us-east1` · Build: `09bab640`
 
 ---
 
