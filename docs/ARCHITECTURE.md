@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-REVERIE is an autonomous multi-agent AI pipeline that turns a single sentence premise into a complete film — no human direction required. It chains together five distinct stages, each implemented as a separate software component:
+REVERIE is an autonomous multi-agent AI pipeline that turns a single sentence premise into a complete film — no human direction required. It chains together four distinct agent stages, each implemented as a separate software component:
 
 1. **Pre-Production** — Character agents simulate a table read; a screenwriter locks an exact shot list
 2. **Shot Planning** — A deterministic Cinematographer builds a structured Omni prompt with a frozen CHARACTER BIBLE
