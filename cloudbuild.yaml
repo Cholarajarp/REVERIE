@@ -21,7 +21,7 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'reverie'
+      - 'reverie-live'
       - '--image'
       - 'gcr.io/$PROJECT_ID/reverie:latest'
       - '--region'
