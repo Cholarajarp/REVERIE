@@ -1,7 +1,7 @@
 # REVERIE — System Architecture
 
 > **Google Cloud All Things Agentic Hackathon 2026 — Taskmaster Track**
-> Live deployment: [reverie-scl5qkqk6a-ue.a.run.app](https://reverie-scl5qkqk6a-ue.a.run.app)
+> Live deployment: shared privately with judges
 
 ---
 
