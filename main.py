@@ -18,6 +18,7 @@ from core.studio_engine import StudioEngine
 from core.audience_sync import audience_websocket_endpoint, audience_sync_manager
 from core.redis_broadcaster import RedisBroadcaster
 from agents.cinematographer_agent import CinematographerAgent
+from agents.ads_agent import is_ad_style
 from agents.factory import create_dynamic_characters
 from repositories.world import WorldRepository
 from repositories.scene import SceneRepository
@@ -62,6 +63,11 @@ class StartSimulationRequest(BaseModel):
     aspect_ratio: str = "16:9"
     visual_style: str = "cinematic"
     premise: Optional[str] = None
+    # Client-supplied brand/product name for ad styles. The Ads Specialist
+    # already accepts a brand hint; without this field there was no way to state
+    # what the commercial is actually selling, so the brief had to guess it from
+    # the premise. Ignored for non-ad styles.
+    brand: str = Field(default="", max_length=120)
     
 class RenderScriptRequest(BaseModel):
     script: List[Dict]
@@ -74,8 +80,13 @@ class RenderScriptRequest(BaseModel):
 
 class GenerateCastRequest(BaseModel):
     premise: str  # e.g. "Spider-Man in 2050 fighting a cyber villain"
-    num_characters: int = 3
+    # A one-character piece is valid (monologue, narrator, single presenter), so
+    # the floor is 1 rather than 2. The ceiling matches the Studio's chip row and
+    # keeps a single Gemini call from being asked for an unbounded cast.
+    num_characters: int = Field(default=3, ge=1, le=5)
     visual_style: str = "cinematic"
+    # Carries SECONDS when the style is an ad and MINUTES otherwise, matching
+    # what the Studio sends for the same field elsewhere.
     film_duration_minutes: int = 1
 
 # Global instances
@@ -230,7 +241,8 @@ async def start_simulation(request: StartSimulationRequest):
         video_duration=request.video_duration,
         film_duration_minutes=request.film_duration_minutes,
         aspect_ratio=request.aspect_ratio,
-        visual_style=request.visual_style
+        visual_style=request.visual_style,
+        brand=request.brand
     ))
 
     def _log_completion(task: asyncio.Task) -> None:
@@ -272,6 +284,7 @@ async def api_simulate_script(request: StartSimulationRequest):
             film_duration_minutes=request.film_duration_minutes,
             aspect_ratio=request.aspect_ratio,
             visual_style=request.visual_style,
+            brand=request.brand,
             simulation_ticks=1
         )
         return result
@@ -544,15 +557,39 @@ async def generate_cast(request: GenerateCastRequest):
 
     model = GenerativeModel("gemini-3.5-flash")
 
+    # The Studio sends this field in SECONDS for ad styles and MINUTES otherwise.
+    # Reading it as minutes unconditionally described a 20-second commercial as a
+    # "20-minute film", which pushed Gemini toward slow-burn backstory for a
+    # two-shot ad.
+    if is_ad_style(request.visual_style):
+        runtime_label = f"{request.film_duration_minutes}-second commercial"
+        runtime_line = f"Runtime: {request.film_duration_minutes} seconds"
+    else:
+        runtime_label = f"{request.film_duration_minutes}-minute film"
+        runtime_line = f"Film Duration: {request.film_duration_minutes} minutes"
+
+    # A solo cast cannot have interpersonal conflict, a shared starting location,
+    # or an antagonist. Demanding those for a 1-character request produced either
+    # an extra invented character or an ignored instruction.
+    if request.num_characters == 1:
+        ensemble_rules = """- This is a SOLO piece. Do not invent a second character.
+- The conflict must be internal or against an unseen offscreen force
+- Memories should establish the single character's stakes, secret, or dilemma"""
+    else:
+        ensemble_rules = """- Characters MUST have conflicting goals that create dramatic tension
+- At least 2 characters should start in the SAME location for immediate interaction
+- Include at least one antagonist or morally ambiguous character
+- Memories should hint at secrets, grudges, or unresolved relationships between characters"""
+
     prompt = f"""You are a world-class screenwriter and casting director. Given a premise,
-generate exactly {request.num_characters} detailed characters for an autonomous AI simulation.
-The simulation will generate a {request.film_duration_minutes}-minute film in the "{request.visual_style}" visual style.
-Tailor the character depth, goals, and conflicts to this duration. A 1-minute film needs immediate,
-simple conflicts. A 10-minute film needs deeper, slow-burn tension.
+generate exactly {request.num_characters} detailed character(s) for an autonomous AI simulation.
+The simulation will generate a {runtime_label} in the "{request.visual_style}" visual style.
+Tailor the character depth, goals, and conflicts to this duration. A short runtime needs immediate,
+simple conflict. A longer runtime supports deeper, slow-burn tension.
 
 Premise: "{request.premise}"
 Visual Style: {request.visual_style}
-Film Duration: {request.film_duration_minutes} minutes
+{runtime_line}
 
 For EACH character, output:
 - name: A memorable, specific character name
@@ -571,10 +608,7 @@ For EACH character, output:
   and leather gloves, steely grey eyes"
 
 IMPORTANT RULES:
-- Characters MUST have conflicting goals that create dramatic tension
-- At least 2 characters should start in the SAME location for immediate interaction
-- Include at least one antagonist or morally ambiguous character
-- Memories should hint at secrets, grudges, or unresolved relationships between characters
+{ensemble_rules}
 - visual_description must be in the aesthetic of the "{request.visual_style}" style
   (e.g. for "noir": period clothing, high-contrast lighting clues; for "anime": stylised features)
 

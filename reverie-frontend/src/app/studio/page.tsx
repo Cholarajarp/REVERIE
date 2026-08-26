@@ -44,24 +44,67 @@ const PRESET_TEMPLATES = [
   },
 ];
 
+/* ─── Ad presets ───
+   An advertisement is not a short drama, so it does not start from a dramatic
+   ensemble. These are presenters and product demos: small casts, a concrete
+   product, and a premise the Ads Specialist can derive a value proposition
+   from. Kept separate from PRESET_TEMPLATES so neither list has to pretend to
+   serve both jobs. */
+const AD_PRESET_TEMPLATES = [
+  {
+    id: "ad-product",
+    name: "Product Launch",
+    icon: "📦",
+    brand: "Aether Running Shoes",
+    premise:
+      "A trail runner laces up Aether running shoes before dawn and crests a ridge as the sun breaks, showing the shoe's grip and cushioning",
+    characters: [
+      { name: "Maya", current_location: "Mountain Trailhead", current_goal: "Reach the ridge before sunrise.", mood: "Focused and calm", memory_stream: "I run this trail every morning.\nThese shoes changed how far I can go.", personality_description: "You are Maya, a trail runner who speaks plainly and never oversells. You describe how something feels, not how great it is.", voice_id: "en-US-Neural2-E", visual_description: "Athletic woman, early 30s, dark ponytail, wearing a teal running jacket and black leggings, bright orange trail running shoes", reference_image_base64: "" },
+    ],
+  },
+  {
+    id: "ad-app",
+    name: "App / Service Demo",
+    icon: "📱",
+    brand: "Ledger",
+    premise:
+      "A small cafe owner uses the Ledger app to close out her books in under a minute at the end of a long shift",
+    characters: [
+      { name: "Priya", current_location: "Cafe Counter", current_goal: "Finish the books and get home.", mood: "Tired but relieved", memory_stream: "I used to spend an hour on this every night.\nNow it takes a minute on my phone.", personality_description: "You are Priya, a cafe owner. You are warm, practical, and talk about time saved rather than features.", voice_id: "en-US-Neural2-F", visual_description: "South Asian woman, late 30s, hair in a loose bun, wearing a denim apron over a mustard shirt, warm tired smile", reference_image_base64: "" },
+    ],
+  },
+  {
+    id: "ad-food",
+    name: "Food & Beverage",
+    icon: "☕",
+    brand: "Rooted Coffee",
+    premise:
+      "Slow macro shots of Rooted Coffee being poured at sunrise while a barista describes where the beans come from",
+    characters: [
+      { name: "Theo", current_location: "Roastery Bar", current_goal: "Pour the morning's first cup.", mood: "Unhurried and warm", memory_stream: "I have poured this blend a thousand times.\nI know the farm it comes from.", personality_description: "You are Theo, a barista who speaks slowly and specifically about origin and craft. You never use marketing language.", voice_id: "en-US-Studio-O", visual_description: "Man, late 20s, close beard, forearm tattoo, wearing a charcoal apron over a white tee, behind a wooden roastery bar", reference_image_base64: "" },
+    ],
+  },
+];
+
 /* ─── Configuration Options ─── */
 const CLIP_DURATION_OPTIONS = [
   { value: "10s", label: "10 sec", desc: "Stateful Omni shot" },
 ];
 
-const FILM_DURATION_OPTIONS = [
-  { value: 1, label: "1 min", desc: "Quick demo" },
-  { value: 2, label: "2 min", desc: "Short" },
-  { value: 3, label: "3 min", desc: "Standard" },
-  { value: 4, label: "4 min", desc: "Daily-cap max" },
-];
-
-// Ad durations are in SECONDS (not minutes). Sent as film_duration_minutes
-// with is_ad flag so the backend treats them as seconds.
-const AD_DURATION_OPTIONS = [
-  { value: 20, label: "20 sec", desc: "2-clip ad" },
-  { value: 40, label: "40 sec", desc: "4-clip ad" },
-];
+/* Duration is a continuous range, not a fixed menu.
+   Both tracks are bounded by the same hard limits the backend enforces, so the
+   control cannot express a production the render would reject:
+     - clips are atomic 10s Omni shots (OMNI_CLIP_DURATION_SECONDS)
+     - the daily budget is 24 clips = 240s of footage
+   Ads are expressed in SECONDS and drama in MINUTES, matching the units
+   `studio_engine.simulate_script` branches on via `is_ad_style`. */
+const CLIP_SECONDS = 10;
+/* The renderer reserves one clip per shot against a daily budget
+   (OMNI_DAILY_CLIP_BUDGET, default 24). Scene CRUD is capped by this so the
+   editor cannot build a script the render would reject outright. */
+const MAX_SCENES = 24;
+const AD_DURATION_RANGE = { min: 10, max: 90, step: 10 };   // seconds
+const FILM_DURATION_RANGE = { min: 1, max: 4, step: 1 };     // minutes
 
 const ASPECT_RATIO_OPTIONS = [
   { value: "16:9", label: "16:9", desc: "Standard HD (Omni default)" },
@@ -73,10 +116,13 @@ const STYLE_OPTIONS = [
   { value: "anime", label: "Anime", desc: "Japanese animation", icon: "✨" },
   { value: "documentary", label: "Documentary", desc: "Raw, grounded", icon: "📹" },
   { value: "noir", label: "Noir", desc: "High-contrast shadow", icon: "🌑" },
-  // Routes planning through the Ads Specialist instead of the drama
-  // screenwriter: persuasive arc, product continuity, and a claim-compliance pass.
-  { value: "commercial", label: "Commercial", desc: "Ads specialist · CTA + compliance", icon: "📣" },
+  // "commercial" is deliberately absent. Advertising is a production MODE, not a
+  // look: it swaps the planner (Ads Specialist, not the drama screenwriter), the
+  // unit of duration, and the validation rules. Burying it in this list forced a
+  // choice between telling a story and selling a product.
 ];
+
+const AD_VISUAL_STYLE = "commercial";
 
 const AD_STYLES = new Set(["commercial", "ads", "advertisement", "advert"]);
 
@@ -167,6 +213,14 @@ export default function StudioPage() {
   const [filmDuration, setFilmDuration] = useState(1);
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [visualStyle, setVisualStyle] = useState("cinematic");
+  /* Brand/product name for ad styles. Sent to the Ads Specialist as a brief
+     hint; ignored by the drama screenwriter. */
+  const [brand, setBrand] = useState("");
+  /* Production mode is the top-level fork: it decides which planner runs, what
+     unit duration is expressed in, and which presets and validation apply.
+     It maps onto the backend's existing `visual_style`-based `is_ad_style`
+     check, so no new backend contract is introduced. */
+  const [productionMode, setProductionMode] = useState<"film" | "ad">("film");
 
   /* Cast */
   const [characters, setCharacters] = useState<CharacterData[]>([emptyCharacter()]);
@@ -176,6 +230,9 @@ export default function StudioPage() {
   /* Media assets */
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const assetInputRef = useRef<HTMLInputElement>(null);
+  /* Separate input for the review screen: the assets tab is unmounted by then,
+     so its ref is unavailable while the script is being approved. */
+  const reviewAssetInputRef = useRef<HTMLInputElement>(null);
   const charImgRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   /* AI cast generator */
@@ -189,6 +246,23 @@ export default function StudioPage() {
   const [startingStep, setStartingStep] = useState("");
   const [scriptData, setScriptData] = useState<any>(null);
   const [isRendering, setIsRendering] = useState(false);
+
+  /* ── Derived production values ──
+     Declared above the handlers because the request payloads below depend on
+     them. `filmDuration` carries different units per mode, exactly as the
+     backend reads it: SECONDS for ads, MINUTES for film. Keeping the conversion
+     in one place stops the slider bounds and the clip estimate from drifting
+     apart.
+
+     Ad-ness is decided by the production MODE, not by the aesthetic. It still
+     travels to the backend as `visual_style: "commercial"`, which is what
+     `is_ad_style` already keys on, so no new backend contract is needed. */
+  const isAd = productionMode === "ad";
+  const effectiveVisualStyle = isAd ? AD_VISUAL_STYLE : visualStyle;
+  const durationRange = isAd ? AD_DURATION_RANGE : FILM_DURATION_RANGE;
+  const targetSeconds = isAd ? filmDuration : filmDuration * 60;
+  const totalClips = Math.max(1, Math.ceil(targetSeconds / CLIP_SECONDS));
+  const activePresetList = isAd ? AD_PRESET_TEMPLATES : PRESET_TEMPLATES;
 
   /* ── Cast helpers ── */
   const addCharacter = () => {
@@ -214,10 +288,14 @@ export default function StudioPage() {
   };
 
   const applyPreset = (id: string) => {
-    const preset = PRESET_TEMPLATES.find((p) => p.id === id);
+    // Look in the list for the CURRENT mode, so an ad preset can never be
+    // applied to a film production or vice versa.
+    const preset = activePresetList.find((p) => p.id === id);
     if (!preset) return;
     setCharacters(preset.characters as CharacterData[]);
     setAiPremise(preset.premise);
+    // Ad presets carry the brand they are selling; film presets have none.
+    if ("brand" in preset && typeof preset.brand === "string") setBrand(preset.brand);
     setActivePreset(id);
     setExpandedChar(0);
   };
@@ -230,7 +308,7 @@ export default function StudioPage() {
       const res = await fetch(`${getApiBase()}/generate_cast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ premise: aiPremise, num_characters: aiCharCount, visual_style: visualStyle, film_duration_minutes: filmDuration }),
+        body: JSON.stringify({ premise: aiPremise, num_characters: aiCharCount, visual_style: effectiveVisualStyle, film_duration_minutes: filmDuration }),
       });
       const data = await res.json();
       if (data.characters?.length > 0) {
@@ -353,7 +431,18 @@ export default function StudioPage() {
         name: c.name, current_location: c.current_location || "Central",
         current_goal: c.current_goal || "Explore the world.", mood: c.mood || "Neutral",
       }))));
-      sessionStorage.setItem("reverie_settings", JSON.stringify({ videoDuration, filmDuration, aspectRatio, visualStyle }));
+      /* `targetSeconds` is written because `filmDuration` alone is ambiguous:
+         it means minutes for a film and seconds for an ad. The dashboard read it
+         as minutes unconditionally, so a 30s ad was computed as 180 clips and its
+         progress bar sat near zero for the whole render. */
+      sessionStorage.setItem("reverie_settings", JSON.stringify({
+        videoDuration,
+        filmDuration,
+        targetSeconds,
+        isAd,
+        aspectRatio,
+        visualStyle: effectiveVisualStyle,
+      }));
     } catch { /* sessionStorage unavailable */ }
 
     try {
@@ -382,8 +471,10 @@ export default function StudioPage() {
             video_duration: videoDuration,
             film_duration_minutes: filmDuration,
             aspect_ratio: aspectRatio,
-            visual_style: visualStyle,
+            visual_style: effectiveVisualStyle,
             premise: aiPremise,
+            // Only meaningful in ad mode; the drama planner ignores it.
+            brand: isAd ? brand.trim() : "",
           }),
           signal: ctrl.signal,
         });
@@ -503,21 +594,166 @@ export default function StudioPage() {
       return { ...prev, script, edited: true };
     });
 
+  /* ── Scene CRUD ──
+     Adding or removing shots changes the film's real length. The compiler passes
+     `target_duration_seconds` to ffmpeg as `-t`, which TRIMS the output, so a
+     script that grew without updating it would render clips the viewer never
+     sees — billed, then cut. Every structural edit therefore rewrites the
+     runtime to match the shot count. */
+  const withSyncedRuntime = (prev: any, script: any[]) => {
+    const seconds = script.length * CLIP_SECONDS;
+    const settings = { ...(prev.settings ?? {}) };
+    settings.target_duration_seconds = seconds;
+    // This field carries SECONDS for ads and MINUTES for film, matching the
+    // backend's unit convention for the same key.
+    settings.film_duration_minutes = AD_STYLES.has(settings.visual_style ?? "")
+      ? seconds
+      : Math.max(1, Math.round(seconds / 60));
+    return { ...prev, script, settings, edited: true };
+  };
+
+  /* `transition_from_previous` describes the shot that came BEFORE this one, and
+     the cinematographer injects it verbatim as "Continuity transition: ..." into
+     the Omni prompt. After a structural edit the predecessor can be a different
+     shot entirely, so a stale note would instruct the renderer to match a scene
+     that is no longer there. Only the shots whose predecessor actually changed
+     are cleared, and shot 1 never carries one. */
+  const clearStaleTransitions = (script: any[], indices: number[]) => {
+    const affected = new Set(indices.filter((i) => i >= 0 && i < script.length));
+    if (script.length > 0) affected.add(0);
+    return script.map((scene, i) => {
+      if (!affected.has(i)) return scene;
+      const continuity = { ...(scene.continuity ?? {}) };
+      if (!String(continuity.transition_from_previous ?? "").trim()) return scene;
+      continuity.transition_from_previous = "";
+      return { ...scene, continuity };
+    });
+  };
+
+  const emptyScene = () => ({
+    location: "",
+    drama_beat: "",
+    characters_involved: [],
+    dialogues: [],
+    scene_asset_labels: [],
+    continuity: { environment_state: "", transition_from_previous: "", character_state_updates: [] },
+  });
+
+  const addScene = (afterIdx?: number) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const script = [...prev.script];
+      if (script.length >= MAX_SCENES) return prev;
+      const at = afterIdx === undefined ? script.length : afterIdx + 1;
+      script.splice(at, 0, emptyScene());
+      // The inserted shot and the one displaced after it both have new predecessors.
+      return withSyncedRuntime(prev, clearStaleTransitions(script, [at, at + 1]));
+    });
+
+  const duplicateScene = (idx: number) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const script = [...prev.script];
+      if (script.length >= MAX_SCENES) return prev;
+      // Deep-copy the nested arrays so editing the copy cannot mutate the original.
+      const source = script[idx];
+      script.splice(idx + 1, 0, {
+        ...source,
+        characters_involved: [...(source.characters_involved ?? [])],
+        dialogues: (source.dialogues ?? []).map((d: any) => ({ ...d })),
+        scene_asset_labels: [...(source.scene_asset_labels ?? [])],
+        continuity: { ...(source.continuity ?? {}) },
+      });
+      // The copy inherited a transition describing the ORIGINAL's predecessor,
+      // which is not its own. The shot after it also shifted.
+      return withSyncedRuntime(prev, clearStaleTransitions(script, [idx + 1, idx + 2]));
+    });
+
+  const removeScene = (idx: number) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const script = prev.script.filter((_: any, i: number) => i !== idx);
+      // Whatever followed the deleted shot now follows a different one.
+      return withSyncedRuntime(prev, clearStaleTransitions(script, [idx]));
+    });
+
+  const moveScene = (idx: number, delta: number) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const target = idx + delta;
+      if (target < 0 || target >= prev.script.length) return prev;
+      const script = [...prev.script];
+      [script[idx], script[target]] = [script[target], script[idx]];
+      // Both swapped shots, and the one following the later slot, changed predecessor.
+      const lo = Math.min(idx, target);
+      const hi = Math.max(idx, target);
+      // Order changed but the shot count did not, so runtime is unaffected.
+      return {
+        ...prev,
+        script: clearStaleTransitions(script, [lo, hi, hi + 1]),
+        edited: true,
+      };
+    });
+
+  /* ── Cast CRUD during review ──
+     A name is a foreign key: the backend drops any `characters_involved` entry or
+     dialogue speaker it cannot match to a cast member. So a rename must cascade
+     through every scene, and a removal must clear that character from all shots,
+     or the edit silently loses content at render time. */
+  const updateReviewCharacter = (idx: number, field: string, value: string) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const characters = [...(prev.characters ?? [])];
+      const previousName = String(characters[idx]?.name ?? "");
+      characters[idx] = { ...characters[idx], [field]: value };
+      if (field !== "name" || value === previousName) {
+        return { ...prev, characters, edited: true };
+      }
+      const script = prev.script.map((scene: any) => ({
+        ...scene,
+        characters_involved: (scene.characters_involved ?? []).map((n: string) =>
+          n === previousName ? value : n
+        ),
+        dialogues: (scene.dialogues ?? []).map((d: any) =>
+          d.character_name === previousName ? { ...d, character_name: value } : d
+        ),
+      }));
+      return { ...prev, characters, script, edited: true };
+    });
+
+  const removeReviewCharacter = (idx: number) =>
+    setScriptData((prev: any) => {
+      if (!prev) return prev;
+      const name = String(prev.characters?.[idx]?.name ?? "");
+      const characters = (prev.characters ?? []).filter((_: any, i: number) => i !== idx);
+      const script = prev.script.map((scene: any) => ({
+        ...scene,
+        characters_involved: (scene.characters_involved ?? []).filter((n: string) => n !== name),
+        dialogues: (scene.dialogues ?? []).filter((d: any) => d.character_name !== name),
+      }));
+      return { ...prev, characters, script, edited: true };
+    });
+
   /* Validate before spending render budget. These mirror the backend's
      _normalise_scene rules, so a script that would be silently dropped mid-render
      is caught here while it is still free to fix. */
   const scriptIssues: string[] = React.useMemo(() => {
     if (!scriptData?.script) return [];
     const issues: string[] = [];
-    const isAd = AD_STYLES.has(scriptData.settings?.visual_style ?? visualStyle);
+    // Read ad-ness from the settings the BACKEND returned, which is authoritative
+    // for the script under review, and fall back to the current mode.
+    const scriptIsAd = AD_STYLES.has(scriptData.settings?.visual_style ?? "") || isAd;
     scriptData.script.forEach((scene: any, i: number) => {
       const n = i + 1;
       if (!String(scene.location ?? "").trim()) issues.push(`Scene ${n}: location is empty.`);
       if (!String(scene.drama_beat ?? "").trim()) issues.push(`Scene ${n}: action is empty.`);
       if ((scene.characters_involved?.length ?? 0) > 3)
         issues.push(`Scene ${n}: more than 3 characters on screen.`);
-      if (!isAd && (scene.characters_involved?.length ?? 0) === 0)
+      // Only an ad may have a product-only shot with nobody on screen.
+      if (!scriptIsAd && (scene.characters_involved?.length ?? 0) === 0)
         issues.push(`Scene ${n}: no characters selected.`);
+      if ((scene.dialogues?.length ?? 0) > 2)
+        issues.push(`Scene ${n}: more than 2 dialogue lines for a 10s shot.`);
       (scene.dialogues ?? []).forEach((d: any, j: number) => {
         if (!String(d.line ?? "").trim())
           issues.push(`Scene ${n}, line ${j + 1}: dialogue text is empty.`);
@@ -525,8 +761,18 @@ export default function StudioPage() {
           issues.push(`Scene ${n}, line ${j + 1}: speaker is not in this scene.`);
       });
     });
+    // Scene CRUD can grow the script past what the daily clip budget allows.
+    // The render would refuse this outright, so it is caught here instead.
+    if (scriptData.script.length > MAX_SCENES)
+      issues.push(`${scriptData.script.length} scenes exceeds the ${MAX_SCENES}-clip daily render budget.`);
+    if (scriptData.script.length === 0)
+      issues.push("The script has no scenes.");
+    // render_movie refuses a production with no cast, so catch it here rather
+    // than letting the render fail after the user has committed to it.
+    if ((scriptData.characters?.length ?? 0) === 0)
+      issues.push("The production has no cast members.");
     return issues;
-  }, [scriptData, visualStyle]);
+  }, [scriptData, isAd]);
 
   /* ── Render approved script ── */
   const handleRenderMovie = async () => {
@@ -536,10 +782,31 @@ export default function StudioPage() {
     }
     setIsRendering(true);
     try {
+      /* Re-attach the current asset library to every cast entry before rendering.
+         The backend resolves each shot's `scene_asset_labels` against
+         `characters[*].reference_asset_urls`, and that list is otherwise frozen
+         from launch time — so an image uploaded during review would be
+         attachable here yet silently resolve to nothing in the render. */
+      const liveAssets = mediaAssets
+        .filter((a) => !a.uploading && !a.error && a.public_url)
+        .map((a) => ({
+          url: a.public_url,
+          label: a.label,
+          type: a.asset_type,
+          mime_type: a.mime_type,
+        }));
+      const renderPayload = {
+        ...scriptData,
+        characters: (scriptData.characters ?? []).map((c: any) => ({
+          ...c,
+          reference_asset_urls: liveAssets,
+        })),
+      };
+
       const res = await fetch(`${getApiBase()}/api/studio/render_movie`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(scriptData),
+        body: JSON.stringify(renderPayload),
       });
       const data = await res.json();
       if (data.status === "started" || data.status === "already_running") {
@@ -556,12 +823,6 @@ export default function StudioPage() {
     }
   };
 
-  // For ad styles, filmDuration is already in seconds (20 or 40).
-  // For drama styles, filmDuration is in minutes — convert to seconds first.
-  const isAd = AD_STYLES.has(visualStyle);
-  const totalClips = isAd
-    ? Math.ceil(filmDuration / parseInt(videoDuration))
-    : Math.ceil((filmDuration * 60) / parseInt(videoDuration));
   const readyCount = characters.filter((c) => c.name.trim()).length;
 
   /* ════════════════════════════════════════════
@@ -646,6 +907,119 @@ export default function StudioPage() {
             </Panel>
           )}
 
+          {/* Cast, editable during review.
+              A character name is effectively a foreign key: the backend drops any
+              on-screen entry or dialogue speaker it cannot match to a cast member.
+              Renaming here therefore cascades through every shot, and removing a
+              character clears them from all shots, so an edit can never silently
+              lose dialogue at render time. */}
+          <Panel title="🎭 CAST" subtitle="RENAME OR RETIRE — CHANGES CASCADE THROUGH EVERY SHOT" className="w-full">
+            <div className="flex flex-col gap-2 p-1">
+              {(scriptData.characters ?? []).map((c: any, ci: number) => (
+                <div
+                  key={ci}
+                  className="flex flex-col md:flex-row gap-2 md:items-center p-2 rounded border border-white/8 bg-black/30"
+                >
+                  <input
+                    type="text"
+                    value={c.name ?? ""}
+                    onChange={(e) => updateReviewCharacter(ci, "name", e.target.value)}
+                    placeholder="Character name"
+                    aria-label={`Cast member ${ci + 1} name`}
+                    className="input-field text-xs md:w-44 shrink-0"
+                  />
+                  <input
+                    type="text"
+                    value={c.visual_description ?? ""}
+                    onChange={(e) => updateReviewCharacter(ci, "visual_description", e.target.value)}
+                    placeholder="Visual description — injected into every shot prompt"
+                    aria-label={`Cast member ${ci + 1} visual description`}
+                    className="input-field text-xs flex-1"
+                  />
+                  <button
+                    onClick={() => removeReviewCharacter(ci)}
+                    aria-label={`Remove ${c.name || `cast member ${ci + 1}`} from the production`}
+                    title="Remove from the production and from every shot"
+                    className="text-red-500/50 hover:text-red-400 font-mono text-[10px] px-2 py-1 cursor-pointer transition-colors shrink-0"
+                  >
+                    REMOVE
+                  </button>
+                </div>
+              ))}
+              {(scriptData.characters?.length ?? 0) === 0 && (
+                <p className="font-mono text-[10px] text-red-300/70">
+                  No cast members left. The render requires at least one.
+                </p>
+              )}
+              <p className="text-[9px] font-mono text-white/25">
+                The visual description sits at the top of every Omni prompt, so it is the strongest
+                continuity control on this screen.
+              </p>
+            </div>
+          </Panel>
+
+          {/* Asset library, available during review.
+              Uploading previously required going back and re-running the table
+              read, which discarded the script. Renaming is deliberately not
+              offered here: a shot stores the asset LABEL, so a rename at this
+              point would silently orphan attachments already made below. */}
+          <Panel title="🖼 IMAGE LIBRARY" subtitle="UPLOAD NOW · ATTACH TO ANY SHOT BELOW" className="w-full">
+            <div className="flex flex-col gap-3 p-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => reviewAssetInputRef.current?.click()}
+                  className="px-4 py-2 rounded border border-dashed border-white/20 text-white/50 font-mono text-[10px] uppercase tracking-wider hover:border-[var(--color-accent)]/50 hover:text-[var(--color-accent)]/80 transition-all cursor-pointer"
+                >
+                  + ADD IMAGES
+                </button>
+                <span className="font-mono text-[10px] text-white/30">
+                  {imageAssets.length} image{imageAssets.length !== 1 ? "s" : ""} available
+                </span>
+                <input
+                  ref={reviewAssetInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { handleAssetUpload(e.target.files); e.target.value = ""; }}
+                />
+              </div>
+
+              {mediaAssets.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {mediaAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      title={`${asset.label} · ${asset.mime_type}`}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded border font-mono text-[10px] ${
+                        asset.error
+                          ? "border-red-500/30 bg-red-500/5 text-red-300/70"
+                          : "border-white/10 bg-black/30 text-white/60"
+                      }`}
+                    >
+                      {asset.thumbnail_b64 ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={asset.thumbnail_b64} alt="" className="w-6 h-6 rounded object-cover" />
+                      ) : (
+                        <span className="text-sm">{asset.uploading ? "⏳" : asset.error ? "⚠️" : assetIcon(asset.asset_type)}</span>
+                      )}
+                      <span className="truncate max-w-[140px]">{asset.label}</span>
+                      {!asset.uploading && (
+                        <button
+                          onClick={() => removeAsset(asset.id)}
+                          aria-label={`Remove asset ${asset.label}`}
+                          className="text-white/30 hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Panel>
+
           <Panel title="SCENE BREAKDOWN" subtitle="EDIT ANY SHOT BEFORE SPENDING RENDER BUDGET" className="w-full">
             <div className="flex flex-col gap-3 p-1 max-h-[560px] overflow-y-auto pr-2">
               {scriptData.script.map((scene: any, idx: number) => (
@@ -668,6 +1042,63 @@ export default function StudioPage() {
                       aria-label={`Scene ${idx + 1} location`}
                       className="input-field flex-1 text-xs"
                     />
+                    {/* Structural controls. Each shot is one billed 10s render, so
+                        reordering and deleting here is what stops a bad shot from
+                        being paid for. */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={() => moveScene(idx, -1)}
+                        disabled={idx === 0}
+                        aria-label={`Move scene ${idx + 1} earlier`}
+                        title="Move earlier"
+                        className={`px-1.5 py-1 text-xs rounded transition-colors ${
+                          idx === 0 ? "text-white/12 cursor-not-allowed" : "text-white/40 hover:text-[var(--color-accent)] cursor-pointer"
+                        }`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => moveScene(idx, 1)}
+                        disabled={idx === scriptData.script.length - 1}
+                        aria-label={`Move scene ${idx + 1} later`}
+                        title="Move later"
+                        className={`px-1.5 py-1 text-xs rounded transition-colors ${
+                          idx === scriptData.script.length - 1 ? "text-white/12 cursor-not-allowed" : "text-white/40 hover:text-[var(--color-accent)] cursor-pointer"
+                        }`}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => duplicateScene(idx)}
+                        disabled={scriptData.script.length >= MAX_SCENES}
+                        aria-label={`Duplicate scene ${idx + 1}`}
+                        title={scriptData.script.length >= MAX_SCENES ? `Limit is ${MAX_SCENES} scenes` : "Duplicate this shot"}
+                        className={`px-1.5 py-1 text-[10px] rounded transition-colors ${
+                          scriptData.script.length >= MAX_SCENES ? "text-white/12 cursor-not-allowed" : "text-white/40 hover:text-[var(--color-accent)] cursor-pointer"
+                        }`}
+                      >
+                        ⧉
+                      </button>
+                      <button
+                        onClick={() => addScene(idx)}
+                        disabled={scriptData.script.length >= MAX_SCENES}
+                        aria-label={`Insert a new scene after scene ${idx + 1}`}
+                        title={scriptData.script.length >= MAX_SCENES ? `Limit is ${MAX_SCENES} scenes` : "Insert a shot below"}
+                        className={`px-1.5 py-1 text-xs rounded transition-colors ${
+                          scriptData.script.length >= MAX_SCENES ? "text-white/12 cursor-not-allowed" : "text-white/40 hover:text-[var(--color-accent)] cursor-pointer"
+                        }`}
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => removeScene(idx)}
+                        aria-label={`Delete scene ${idx + 1}`}
+                        title="Delete this shot"
+                        className="px-1.5 py-1 text-xs rounded text-red-500/50 hover:text-red-400 cursor-pointer transition-colors"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
 
                   {/* Who is on screen. Selecting here is what the render actually
@@ -760,11 +1191,19 @@ export default function StudioPage() {
                   {/* Per-shot media. Only image assets are offered: Omni takes
                       images as subject references, and offering audio or video
                       here would imply an influence the renderer does not apply. */}
-                  {imageAssets.length > 0 && (
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] uppercase font-mono tracking-wider text-[var(--color-accent)]/70">
-                        Attach media to this shot
-                      </label>
+                  {/* Always rendered. This section used to be hidden entirely when
+                      the library held no images, so a user who had not uploaded
+                      before the table read saw no attach control at all and read
+                      it as a missing feature. */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] uppercase font-mono tracking-wider text-[var(--color-accent)]/70">
+                      Attach media to this shot
+                    </label>
+                    {imageAssets.length === 0 ? (
+                      <p className="text-[9px] font-mono text-white/30">
+                        No images in the library yet — add some above to attach them here.
+                      </p>
+                    ) : (
                       <div className="flex gap-1.5 flex-wrap">
                         {imageAssets.map((asset) => {
                           const active = (scene.scene_asset_labels ?? []).includes(asset.label);
@@ -791,10 +1230,26 @@ export default function StudioPage() {
                           );
                         })}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </motion.div>
               ))}
+
+              {/* Append a shot. Runtime is recalculated from the shot count, so
+                  the compiled film is never trimmed shorter than the script. */}
+              <button
+                onClick={() => addScene()}
+                disabled={scriptData.script.length >= MAX_SCENES}
+                className={`w-full py-3 border border-dashed rounded font-mono text-xs uppercase tracking-widest transition-all ${
+                  scriptData.script.length >= MAX_SCENES
+                    ? "border-white/8 text-white/20 cursor-not-allowed"
+                    : "border-white/15 text-white/40 hover:border-[var(--color-accent)]/40 hover:text-[var(--color-accent)]/60 cursor-pointer"
+                }`}
+              >
+                {scriptData.script.length >= MAX_SCENES
+                  ? `Scene limit reached (${MAX_SCENES})`
+                  : "+ ADD SCENE"}
+              </button>
             </div>
           </Panel>
 
@@ -875,14 +1330,59 @@ export default function StudioPage() {
             REVERIE STUDIO
           </h1>
           <p className="font-mono text-xs text-white/40 max-w-xl">
-            Configure your cast, attach visual assets, and let the AI agents improvise your film.
+            {isAd
+              ? "Define the product, the presenter, and the runtime. The Ads Specialist writes a campaign brief, then a compliant shot list that ends on your call to action."
+              : "Configure your cast, attach visual assets, and let the AI agents improvise your film."}{" "}
             Powered by <span className="text-[var(--color-accent)]">Gemini Omni</span> — max 10s clips.
           </p>
         </div>
 
+        {/* ── Production mode ──
+            The top-level fork. Advertising swaps the planner, the unit of
+            duration, the presets, and the validation rules, so it is a mode
+            rather than one entry in the visual-style list. */}
+        <div className="w-full flex flex-col items-center gap-2">
+          <div
+            role="tablist"
+            aria-label="Production mode"
+            className="inline-flex rounded border border-white/12 overflow-hidden bg-black/40"
+          >
+            {([
+              { id: "film", label: "🎞 FILM", desc: "Dramatic story" },
+              { id: "ad", label: "📣 ADVERTISEMENT", desc: "Product campaign" },
+            ] as const).map((m) => (
+              <button
+                key={m.id}
+                role="tab"
+                aria-selected={productionMode === m.id}
+                onClick={() => {
+                  if (productionMode === m.id) return;
+                  const nextIsAd = m.id === "ad";
+                  setProductionMode(m.id);
+                  // Duration units differ per mode (seconds vs minutes), so the
+                  // value has to be reset rather than carried across.
+                  setFilmDuration(nextIsAd ? 30 : 1);
+                  // Presets belong to one mode only; keeping a stale selection
+                  // highlighted would imply the other list's cast is loaded.
+                  setActivePreset(null);
+                  if (!nextIsAd) setBrand("");
+                }}
+                className={`px-6 py-3 font-mono text-xs uppercase tracking-widest transition-all cursor-pointer ${
+                  productionMode === m.id
+                    ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
+                    : "text-white/40 hover:text-white/70"
+                }`}
+              >
+                <span className="font-bold">{m.label}</span>
+                <span className="block text-[9px] opacity-60 tracking-normal mt-0.5">{m.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* ── Quick-start presets ── */}
         <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-3">
-          {PRESET_TEMPLATES.map((preset) => (
+          {activePresetList.map((preset) => (
             <button
               key={preset.id}
               onClick={() => applyPreset(preset.id)}
@@ -948,7 +1448,9 @@ export default function StudioPage() {
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">Characters</label>
                         <div className="flex gap-2">
-                          {[2, 3, 4, 5].map((n) => (
+                          {/* A single-character piece is legitimate: a monologue,
+                              a narrator, or a product demo with one presenter. */}
+                          {[1, 2, 3, 4, 5].map((n) => (
                             <button key={n} onClick={() => setAiCharCount(n)}
                               className={`w-10 h-10 rounded border font-mono text-sm cursor-pointer transition-all ${
                                 aiCharCount === n ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)]" : "border-white/10 text-white/50 hover:border-white/30"
@@ -1222,26 +1724,54 @@ export default function StudioPage() {
                 <Panel title="⚙ PRODUCTION SETTINGS" subtitle="CINEMATIC OUTPUT CONFIGURATION">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 p-1">
 
-                    {/* Film duration — ad styles show seconds, drama shows minutes */}
+                    {/* Film duration — a draggable range rather than two fixed
+                        presets. Ads are set in seconds, drama in minutes, and the
+                        bounds mirror what the backend will actually accept. */}
                     <div className="flex flex-col gap-2">
-                      <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">
+                      <label
+                        htmlFor="film-duration-range"
+                        className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80"
+                      >
                         🎬 {isAd ? "Ad Duration" : "Total Film Duration"}
                       </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {(isAd ? AD_DURATION_OPTIONS : FILM_DURATION_OPTIONS).map((opt) => (
-                          <button key={opt.value} onClick={() => setFilmDuration(opt.value)}
-                            className={`px-2 py-2.5 rounded border text-center text-xs font-mono transition-all cursor-pointer ${
-                              filmDuration === opt.value ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)] font-bold" : "border-white/10 text-white/50 hover:border-white/25"
-                            }`}>
-                            <div className="font-bold">{opt.label}</div>
-                            <div className="text-[9px] opacity-60 mt-0.5">{opt.desc}</div>
-                          </button>
-                        ))}
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-[family-name:var(--font-family-display)] text-2xl text-[var(--color-accent)] tabular-nums">
+                          {filmDuration}
+                        </span>
+                        <span className="font-mono text-xs text-white/40">{isAd ? "seconds" : "minutes"}</span>
+                      </div>
+                      <input
+                        id="film-duration-range"
+                        type="range"
+                        min={durationRange.min}
+                        max={durationRange.max}
+                        step={durationRange.step}
+                        value={filmDuration}
+                        onChange={(e) => setFilmDuration(Number(e.target.value))}
+                        aria-label={isAd ? "Ad duration in seconds" : "Total film duration in minutes"}
+                        aria-valuemin={durationRange.min}
+                        aria-valuemax={durationRange.max}
+                        aria-valuenow={filmDuration}
+                        aria-valuetext={`${filmDuration} ${isAd ? "seconds" : "minutes"}`}
+                        className="w-full accent-[var(--color-accent)] cursor-pointer"
+                      />
+                      <div className="flex justify-between font-mono text-[9px] text-white/25">
+                        <span>{durationRange.min}{isAd ? "s" : "m"}</span>
+                        <span>{durationRange.max}{isAd ? "s" : "m"}</span>
                       </div>
                       <p className="text-[9px] font-mono text-white/25 mt-0.5">
-                        ≈ {totalClips} clip{totalClips !== 1 ? "s" : ""} will be generated
+                        {totalClips} clip{totalClips !== 1 ? "s" : ""} × 10s ={" "}
+                        {totalClips * 10}s of footage
                         {isAd && <span className="text-yellow-400/60"> · Ad mode</span>}
                       </p>
+                      {/* Clips are atomic 10s Omni shots, so a value that is not a
+                          multiple of 10 is rounded up. Say so instead of silently
+                          rendering a longer film than the number displayed. */}
+                      {totalClips * 10 !== targetSeconds && (
+                        <p className="text-[9px] font-mono text-yellow-400/50">
+                          Rounded up to {totalClips * 10}s — Omni renders whole 10s shots.
+                        </p>
+                      )}
                     </div>
 
                     {/* Clip duration */}
@@ -1271,28 +1801,66 @@ export default function StudioPage() {
                       </div>
                     </div>
 
-                    {/* Visual style */}
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">Visual Style</label>
-                      <div className="flex flex-col gap-1.5">
-                        {STYLE_OPTIONS.map((opt) => (
-                          <Chip key={opt.value} selected={visualStyle === opt.value} onClick={() => {
-                            setVisualStyle(opt.value);
-                            // Reset duration to sensible default when switching style
-                            if (AD_STYLES.has(opt.value)) {
-                              setFilmDuration(20); // default 20-second ad
-                            } else if (AD_STYLES.has(visualStyle)) {
-                              setFilmDuration(1);  // back to 1 minute for drama
-                            }
-                          }}>
-                            <span>{opt.icon}</span>
-                            <span className="font-bold ml-1">{opt.label}</span>
-                            <span className="opacity-55 ml-2">{opt.desc}</span>
-                          </Chip>
-                        ))}
+                    {/* Visual style — film mode only.
+                        Ad mode sends visual_style="commercial", which the
+                        cinematographer maps to its own lighting grammar. Showing
+                        aesthetic chips here would be a control that silently does
+                        nothing, so the fixed look is stated instead.
+                        Switching an aesthetic never changes the duration unit any
+                        more, because ad-ness is now the production mode. */}
+                    {isAd ? (
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">Look</label>
+                        <div className="p-3 rounded border border-white/10 bg-black/30 font-mono text-[10px] text-white/50 leading-relaxed">
+                          <strong className="text-[var(--color-accent)]">Commercial grammar</strong>
+                          <span className="block mt-1">
+                            Bright high-key lighting, product in crisp focus, stabilised camera.
+                            Applied automatically in ad mode.
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80">Visual Style</label>
+                        <div className="flex flex-col gap-1.5">
+                          {STYLE_OPTIONS.map((opt) => (
+                            <Chip key={opt.value} selected={visualStyle === opt.value} onClick={() => setVisualStyle(opt.value)}>
+                              <span>{opt.icon}</span>
+                              <span className="font-bold ml-1">{opt.label}</span>
+                              <span className="opacity-55 ml-2">{opt.desc}</span>
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Brand is only asked for when it is actually used. The Ads
+                      Specialist takes it as a brief hint; the drama screenwriter
+                      has no use for it. */}
+                  {isAd && (
+                    <div className="flex flex-col gap-1.5 p-1 pt-4 mt-2 border-t border-white/8">
+                      <label
+                        htmlFor="brand-name"
+                        className="text-[10px] uppercase font-mono tracking-wider text-[var(--color-accent)] opacity-80"
+                      >
+                        📣 Brand / Product Name
+                      </label>
+                      <input
+                        id="brand-name"
+                        type="text"
+                        value={brand}
+                        maxLength={120}
+                        onChange={(e) => setBrand(e.target.value)}
+                        placeholder="e.g., Aether Running Shoes"
+                        className="input-field text-xs max-w-md"
+                      />
+                      <p className="text-[9px] font-mono text-white/25">
+                        Names the product in the campaign brief and on screen. Left blank, the
+                        strategist infers it from your premise.
+                      </p>
+                    </div>
+                  )}
                 </Panel>
 
                 {/* Summary */}
@@ -1334,7 +1902,7 @@ export default function StudioPage() {
           <p className="text-[10px] font-mono text-white/25">
             {readyCount} character{readyCount !== 1 ? "s" : ""} ·{" "}
             {mediaAssets.filter((a) => !a.uploading && !a.error).length} asset{mediaAssets.filter((a) => !a.uploading && !a.error).length !== 1 ? "s" : ""} ·{" "}
-            {filmDuration} {isAd ? "sec" : "min"} · {videoDuration} clips · {aspectRatio} · {visualStyle}
+            {filmDuration} {isAd ? "sec" : "min"} · {videoDuration} clips · {aspectRatio} · {effectiveVisualStyle}
           </p>
         </div>
       </div>

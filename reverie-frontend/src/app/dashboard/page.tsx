@@ -128,7 +128,17 @@ export default function DashboardPage() {
   })();
   const filmDuration = filmSettings?.filmDuration ?? 1;
   const clipSecs = parseInt((filmSettings?.videoDuration ?? "10s").replace("s", ""), 10) || 10;
-  const sessionTotalClips = Math.ceil((filmDuration * 60) / clipSecs);
+  /* Prefer the explicit second count. `filmDuration` carries minutes for a film
+     but seconds for an ad, so reading it as minutes inflated an ad's clip target
+     sixtyfold and left the progress bar stuck near zero. The ternary keeps older
+     sessionStorage payloads, written before targetSeconds existed, working. */
+  const targetSeconds =
+    typeof filmSettings?.targetSeconds === "number"
+      ? filmSettings.targetSeconds
+      : filmSettings?.isAd
+        ? filmDuration
+        : filmDuration * 60;
+  const sessionTotalClips = Math.max(1, Math.ceil(targetSeconds / clipSecs));
   // If render_status says there are more scenes than sessionStorage thinks, use that value.
   const totalClipsNeeded = Math.max(sessionTotalClips, scenesTotal ?? 0, scenesReady);
   const filmProgressPct = totalClipsNeeded > 0 ? Math.min(100, Math.round((scenesReady / totalClipsNeeded) * 100)) : 0;

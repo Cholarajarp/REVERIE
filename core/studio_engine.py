@@ -105,6 +105,7 @@ class StudioEngine:
         film_duration_minutes: int = 1,
         aspect_ratio: str = "16:9",
         visual_style: str = "cinematic",
+        brand: str = "",
     ) -> str:
         """Legacy endpoint: run pre-production followed by the Omni harness."""
         result = await self.simulate_script(
@@ -114,6 +115,7 @@ class StudioEngine:
             film_duration_minutes=film_duration_minutes,
             aspect_ratio=aspect_ratio,
             visual_style=visual_style,
+            brand=brand,
             simulation_ticks=1,
         )
         if result.get("status") != "success" or not result.get("script"):
@@ -128,9 +130,15 @@ class StudioEngine:
         film_duration_minutes: int = 1,
         aspect_ratio: str = "16:9",
         visual_style: str = "cinematic",
+        brand: str = "",
         simulation_ticks: int = 1,
     ) -> Dict[str, Any]:
-        """Run a table read then generate an exact shot list + continuity ledger."""
+        """Run a table read then generate an exact shot list + continuity ledger.
+
+        ``brand`` is the client-supplied product or brand name. It is only
+        meaningful for ad styles, where it is handed to the Ads Specialist as a
+        hint so the brief names the real product instead of inferring one.
+        """
         clean_characters = self._validate_characters(characters)
         if not clean_characters:
             return {"status": "error", "detail": "Add at least one named character."}
@@ -219,6 +227,7 @@ class StudioEngine:
                 characters=clean_characters,
                 total_clips=total_clips,
                 clip_duration=OMNI_CLIP_DURATION_SECONDS,
+                brand_hint=str(brand or "").strip(),
             )
             script, planner_report = await self.ads.generate_ad_shot_list(
                 brief=campaign_brief,

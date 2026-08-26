@@ -263,3 +263,63 @@ def test_compliance_runs_over_dialogue_not_just_action():
     )
     assert "guaranteed" not in shots[0]["dialogues"][0]["line"].lower()
     assert report["compliance_rewrites"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Client-supplied brand name
+# ---------------------------------------------------------------------------
+
+def test_brand_hint_reaches_the_campaign_brief_prompt():
+    """A supplied brand must be stated to the strategist, not inferred."""
+    agent = object.__new__(AdsSpecialistAgent)
+    captured = {}
+
+    async def fake_generate_json(prompt, expect_list=False):
+        captured["prompt"] = prompt
+        return {"brand": "Aether Running Shoes", "product": "trail shoes"}
+
+    agent._generate_json = fake_generate_json
+    brief = run(
+        agent.build_campaign_brief(
+            premise="A runner crosses a ridge at dawn.",
+            characters=[{"name": "Ana"}],
+            total_clips=2,
+            clip_duration=10,
+            brand_hint="Aether Running Shoes",
+        )
+    )
+    assert "Aether Running Shoes" in captured["prompt"]
+    assert brief["brand"] == "Aether Running Shoes"
+    # 2 clips x 10s: the brief must describe the real runtime.
+    assert brief["runtime_seconds"] == 20
+
+
+def test_blank_brand_hint_does_not_claim_a_client_supplied_name():
+    agent = object.__new__(AdsSpecialistAgent)
+    captured = {}
+
+    async def fake_generate_json(prompt, expect_list=False):
+        captured["prompt"] = prompt
+        return {}
+
+    agent._generate_json = fake_generate_json
+    brief = run(
+        agent.build_campaign_brief(
+            premise="A cup of coffee at sunrise.",
+            characters=[],
+            total_clips=1,
+            clip_duration=10,
+        )
+    )
+    assert "BRAND NAME SUPPLIED BY THE CLIENT" not in captured["prompt"]
+    # Falls back rather than inventing a brand the client never gave.
+    assert brief["brand"] == "the product"
+
+
+def test_brand_is_threaded_through_both_studio_entry_points():
+    """Guards a real break: passing brand= to a signature that lacks it raises
+    TypeError at request time, on the legacy /start_simulation path."""
+    import inspect
+
+    assert "brand" in inspect.signature(StudioEngine.simulate_script).parameters
+    assert "brand" in inspect.signature(StudioEngine.generate_movie).parameters
