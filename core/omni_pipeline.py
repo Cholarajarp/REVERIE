@@ -37,7 +37,7 @@ MAX_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MAX_CLIP_SECONDS", "12.0"))
 DEFAULT_OMNI_MODEL_ID = "gemini-omni-1.1-flash-preview"
 DEFAULT_DAILY_CLIP_BUDGET = 24
 MAX_REFERENCE_IMAGES = 6
-INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "65"))
+INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "5"))
 
 _DATA_IMAGE_RE = re.compile(
     r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$",
