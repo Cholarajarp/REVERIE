@@ -1173,33 +1173,35 @@ export default function StudioPage() {
                       )}
                     </div>
                     {(scene.dialogues ?? []).map((d: any, di: number) => (
-                      <div key={di} className="flex gap-1.5 items-center">
-                        <select
-                          value={d.character_name ?? ""}
-                          onChange={(e) => updateDialogue(idx, di, "character_name", e.target.value)}
-                          aria-label={`Scene ${idx + 1} line ${di + 1} speaker`}
-                          className="input-field text-[10px] w-32 shrink-0"
-                        >
-                          <option value="">Speaker…</option>
-                          {(scene.characters_involved ?? []).map((name: string) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
+                      <div key={di} className="flex flex-col gap-1 p-2 rounded border border-white/8 bg-black/20">
+                        <div className="flex items-center justify-between gap-2">
+                          <select
+                            value={d.character_name ?? ""}
+                            onChange={(e) => updateDialogue(idx, di, "character_name", e.target.value)}
+                            aria-label={`Scene ${idx + 1} line ${di + 1} speaker`}
+                            className="input-field text-[10px] flex-1"
+                          >
+                            <option value="">Speaker…</option>
+                            {(scene.characters_involved ?? []).map((name: string) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => removeDialogue(idx, di)}
+                            aria-label={`Remove line ${di + 1} from scene ${idx + 1}`}
+                            className="text-red-500/50 hover:text-red-400 text-xs px-1.5 shrink-0 cursor-pointer transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </div>
                         <input
                           type="text"
-                          value={d.line ?? d.text ?? ""}
+                          value={d.line ?? ""}
                           onChange={(e) => updateDialogue(idx, di, "line", e.target.value)}
-                          placeholder="Spoken line (12 words or fewer)"
+                          placeholder="Spoken line — 12 words or fewer"
                           aria-label={`Scene ${idx + 1} line ${di + 1} text`}
-                          className="input-field flex-1 text-xs"
+                          className="input-field w-full text-xs"
                         />
-                        <button
-                          onClick={() => removeDialogue(idx, di)}
-                          aria-label={`Remove line ${di + 1} from scene ${idx + 1}`}
-                          className="text-red-500/50 hover:text-red-400 text-xs px-1.5 cursor-pointer transition-colors"
-                        >
-                          ✕
-                        </button>
                       </div>
                     ))}
                   </div>
