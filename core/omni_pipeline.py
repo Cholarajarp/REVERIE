@@ -37,7 +37,7 @@ MAX_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MAX_CLIP_SECONDS", "12.0"))
 DEFAULT_OMNI_MODEL_ID = "gemini-omni-1.1-flash-preview"
 DEFAULT_DAILY_CLIP_BUDGET = 24
 MAX_REFERENCE_IMAGES = 6
-INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "15"))
+INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "65"))
 
 _DATA_IMAGE_RE = re.compile(
     r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$",
@@ -440,6 +440,46 @@ class OmniPipeline:
         else:
             chained_parts = fresh_parts
 
+        def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
+            """Call interactions.create with exponential backoff on 429.
+
+            Returns (interaction, model_used). If the primary model exhausts
+            all retries, falls back to FALLBACK_OMNI_MODEL_ID automatically.
+            """
+            import time as _time
+            delays = [65, 90, 120]
+            # Phase 1: retry primary model with backoff.
+            for attempt, delay in enumerate(delays):
+                try:
+                    return client.interactions.create(model=model, **kwargs), model
+                except Exception as exc:
+                    msg = str(exc)
+                    is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
+                    if is_quota and attempt < len(delays) - 1:
+                        logger.warning(
+                            "[Omni] 429 on %s — waiting %ss before retry %s/%s",
+                            model, delay, attempt + 1, len(delays) - 1,
+                        )
+                        _time.sleep(delay)
+                        continue
+                    if is_quota:
+                        # Primary exhausted — try fallback model once.
+                        fallback = FALLBACK_OMNI_MODEL_ID
+                        logger.warning(
+                            "[Omni] Primary model %s quota exhausted after %s retries — "
+                            "falling back to %s",
+                            model, len(delays), fallback,
+                        )
+                        try:
+                            return client.interactions.create(model=fallback, **kwargs), fallback
+                        except Exception as fb_exc:
+                            logger.error("[Omni] Fallback model %s also failed: %s", fallback, fb_exc)
+                            raise RuntimeError(
+                                f"Both {model} and fallback {fallback} failed. "
+                                f"Primary: {exc}. Fallback: {fb_exc}"
+                            ) from fb_exc
+                    raise
+
         def _generate() -> tuple[bytes, str, bool]:
             logger.info(
                 "[Omni] interactions.create model=%s references=%s aspect=%s parent=%s",
@@ -450,14 +490,15 @@ class OmniPipeline:
             )
             chain_used = False
             interaction = None
+            model_used = self.omni_model_id
 
             if previous_interaction_id:
                 # Try the real stateful path first. Not every SDK build and
                 # backend combination exposes it, so a rejection must degrade
                 # visibly rather than being swallowed.
                 try:
-                    interaction = client.interactions.create(
-                        model=self.omni_model_id,
+                    interaction, model_used = _omni_create_with_retry(
+                        self.omni_model_id,
                         input=chained_parts,
                         previous_interaction_id=previous_interaction_id,
                     )
@@ -482,10 +523,12 @@ class OmniPipeline:
             if interaction is None:
                 # Unchained fallback: use the self-contained payload so the
                 # cast-lock reference images are still sent.
-                interaction = client.interactions.create(
-                    model=self.omni_model_id,
+                interaction, model_used = _omni_create_with_retry(
+                    self.omni_model_id,
                     input=fresh_parts,
                 )
+            if model_used != self.omni_model_id:
+                logger.info("[Omni] Clip rendered with fallback model %s", model_used)
 
             # An absent id must stay empty: a placeholder like "unknown" would be
             # stored as this shot's interaction id and then handed to the next
