@@ -486,6 +486,17 @@ export default function StudioPage() {
 
       const data = await res!.json();
       if (data.status === "success") {
+        // Normalise dialogue key: the backend may return `text` or `line`.
+        // The editor always writes to `line`, so unify on load.
+        if (data.script) {
+          data.script = data.script.map((scene: any) => ({
+            ...scene,
+            dialogues: (scene.dialogues ?? []).map((d: any) => ({
+              ...d,
+              line: d.line ?? d.text ?? "",
+            })),
+          }));
+        }
         setScriptData(data);
       } else {
         alert("Failed to start simulation: " + (data.detail || data.status));
@@ -1026,10 +1037,10 @@ export default function StudioPage() {
           </Panel>
 
           <Panel title="SCENE BREAKDOWN" subtitle="EDIT ANY SHOT BEFORE SPENDING RENDER BUDGET" className="w-full">
-            <div className="flex flex-col gap-3 p-1 max-h-[560px] overflow-y-auto pr-2">
+            <div className="flex flex-col gap-3 p-1 max-h-[800px] overflow-y-auto pr-2">
               {scriptData.script.map((scene: any, idx: number) => (
                 <motion.div
-                  key={idx}
+                  key={scene._id ?? idx}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.03 }}
