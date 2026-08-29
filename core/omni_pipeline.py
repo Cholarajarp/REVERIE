@@ -35,10 +35,9 @@ OMNI_CLIP_DURATION_SECONDS = 10
 MIN_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MIN_CLIP_SECONDS", "1.0"))
 MAX_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MAX_CLIP_SECONDS", "12.0"))
 DEFAULT_OMNI_MODEL_ID = "gemini-omni-1.1-flash-preview"
-FALLBACK_OMNI_MODEL_ID = "gemini-omni-flash-lite-preview"
 DEFAULT_DAILY_CLIP_BUDGET = 24
 MAX_REFERENCE_IMAGES = 6
-INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "10"))
+INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "65"))
 
 _DATA_IMAGE_RE = re.compile(
     r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$",
@@ -441,32 +440,21 @@ class OmniPipeline:
         else:
             chained_parts = fresh_parts
 
-        _fallback_model = FALLBACK_OMNI_MODEL_ID  # capture at closure time
-
         def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
-            """Try primary model once; on 429 immediately fall back to lite.
-
-            Returns (interaction, model_used).
-            """
-            try:
-                return client.interactions.create(model=model, **kwargs), model
-            except Exception as exc:
-                msg = str(exc)
-                is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
-                if is_quota:
-                    logger.warning(
-                        "[Omni] 429 on %s — switching immediately to fallback %s",
-                        model, _fallback_model,
-                    )
-                    try:
-                        return client.interactions.create(model=_fallback_model, **kwargs), _fallback_model
-                    except Exception as fb_exc:
-                        logger.error("[Omni] Fallback %s also failed: %s", _fallback_model, fb_exc)
-                        raise RuntimeError(
-                            f"Both {model} and fallback {_fallback_model} failed. "
-                            f"Primary: {exc}. Fallback: {fb_exc}"
-                        ) from fb_exc
-                raise
+            """Retry on 429 with backoff until quota resets."""
+            import time as _time
+            for attempt in range(3):
+                try:
+                    return client.interactions.create(model=model, **kwargs), model
+                except Exception as exc:
+                    msg = str(exc)
+                    is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
+                    if is_quota and attempt < 2:
+                        wait = 65 * (attempt + 1)
+                        logger.warning("[Omni] 429 attempt %s — waiting %ss for quota reset", attempt + 1, wait)
+                        _time.sleep(wait)
+                        continue
+                    raise
 
         def _generate() -> tuple[bytes, str, bool]:
             logger.info(
