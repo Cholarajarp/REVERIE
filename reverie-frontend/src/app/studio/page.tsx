@@ -870,19 +870,24 @@ export default function StudioPage() {
               report states what the specialist had to rewrite, rather than
               presenting edited copy as the writer's original output. */}
           {scriptData.campaign_brief && (
-            <Panel title="📣 CAMPAIGN BRIEF" subtitle="ADS SPECIALIST · STRATEGY BEFORE SHOTS" className="w-full">
+            <Panel title="📣 CAMPAIGN BRIEF" subtitle="ADS SPECIALIST · EDITABLE BEFORE RENDER" className="w-full">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-1 font-mono text-xs">
-                {[
-                  ["Brand", scriptData.campaign_brief.brand],
-                  ["Product", scriptData.campaign_brief.product],
-                  ["Audience", scriptData.campaign_brief.audience],
-                  ["Value proposition", scriptData.campaign_brief.value_proposition],
-                  ["Tone", scriptData.campaign_brief.tone],
-                  ["Call to action", scriptData.campaign_brief.call_to_action],
-                ].map(([label, value]) => (
-                  <div key={label as string} className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase tracking-wider text-[var(--color-accent)]/70">{label}</span>
-                    <span className="text-white/70">{value || "—"}</span>
+                {(["brand", "product", "audience", "value_proposition", "tone", "call_to_action"] as const).map((field) => (
+                  <div key={field} className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase tracking-wider text-[var(--color-accent)]/70">
+                      {field.replace(/_/g, " ")}
+                    </span>
+                    <input
+                      type="text"
+                      value={scriptData.campaign_brief[field] || ""}
+                      onChange={(e) =>
+                        setScriptData((prev: any) => ({
+                          ...prev,
+                          campaign_brief: { ...prev.campaign_brief, [field]: e.target.value },
+                        }))
+                      }
+                      className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white/80 focus:outline-none focus:border-[var(--color-accent)]/50 text-xs font-mono"
+                    />
                   </div>
                 ))}
               </div>
