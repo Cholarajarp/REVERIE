@@ -401,21 +401,26 @@ class OmniPipeline:
         # Build the input list that Omni expects.
         # Structure mirrors the user's working SDK sample:
         #   input=[{"type": "image", ...}, {"type": "text", "text": "..."}]
-        # Two input shapes are built up front, because the chained attempt may be
-        # rejected and the fallback must still carry the cast-lock images. Sending
-        # the chained text-only payload unchained would quietly drop every subject
-        # reference and break the identity anchor this pipeline exists to protect.
+        aspect_directive = (
+            "Framing & Aspect Ratio: 9:16 vertical portrait format (full-height mobile composition, 9:16 aspect ratio, no horizontal pillarboxing or letterboxing)."
+            if aspect_ratio == "9:16"
+            else "Framing & Aspect Ratio: 16:9 widescreen landscape format (16:9 aspect ratio)."
+        )
+
         def _fresh_parts() -> List[Dict[str, Any]]:
-            """Self-contained input: subject references first, then the prompt."""
+            """Self-contained input: subject and scene references first, then the prompt."""
             if not references:
-                return [{"type": "text", "text": prompt}]
+                return [{"type": "text", "text": f"{aspect_directive}\n\n{prompt}"}]
             identity_lines = "\n".join(
-                f"- {ref.name} is image #{index + 1}" for index, ref in enumerate(references)
+                f"- Image #{index + 1} ({ref.name}): use this exact visual appearance / identity / product representation in the shot."
+                for index, ref in enumerate(references)
             )
             tagged_prompt = (
-                "Use the supplied image(s) as subject references - preserve these identities "
-                "exactly, do not merge or redesign them.\n"
-                f"Cast map:\n{identity_lines}\n\n{prompt}"
+                f"{aspect_directive}\n\n"
+                "VISUAL REFERENCE MAP:\n"
+                f"{identity_lines}\n\n"
+                "INSTRUCTION: Feature the referenced subject(s) and scene/product asset(s) faithfully in this shot matching the reference images.\n\n"
+                f"{prompt}"
             )
             parts: List[Dict[str, Any]] = [
                 {"type": "image", "data": ref.data, "mime_type": ref.mime_type}
@@ -424,21 +429,34 @@ class OmniPipeline:
             parts.append({"type": "text", "text": tagged_prompt})
             return parts
 
-        fresh_parts = _fresh_parts()
-        if previous_interaction_id:
-            # Continuing shot: Omni inherits visual state from the accepted prior
-            # interaction, so the instruction alone is enough.
+        def _chained_parts() -> List[Dict[str, Any]]:
             continuation_text = (
+                f"{aspect_directive}\n\n"
                 "Create the next distinct 10-second shot in this film. "
                 "Preserve all established character identities, wardrobe, props, "
                 "lighting logic, and audio identity unless this instruction explicitly "
-                "changes them. Single continuous shot; no montage.\n\n" + prompt
+                "changes them. Single continuous shot; no montage.\n\n"
             )
-            chained_parts: List[Dict[str, Any]] = [
-                {"type": "text", "text": continuation_text}
-            ]
-        else:
-            chained_parts = fresh_parts
+            if references:
+                identity_lines = "\n".join(
+                    f"- Image #{index + 1} ({ref.name}): use this exact visual appearance / identity / product representation in the shot."
+                    for index, ref in enumerate(references)
+                )
+                continuation_text += (
+                    "VISUAL REFERENCE MAP FOR THIS SHOT:\n"
+                    f"{identity_lines}\n\n"
+                    "INSTRUCTION: Feature the referenced subject(s) and scene/product asset(s) faithfully in this shot matching the reference images.\n\n"
+                )
+                parts: List[Dict[str, Any]] = [
+                    {"type": "image", "data": ref.data, "mime_type": ref.mime_type}
+                    for ref in references
+                ]
+                parts.append({"type": "text", "text": continuation_text + prompt})
+                return parts
+            return [{"type": "text", "text": continuation_text + prompt}]
+
+        fresh_parts = _fresh_parts()
+        chained_parts = _chained_parts() if previous_interaction_id else fresh_parts
 
         def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
             """On 429 wait 25s and retry on same model, then try omni-flash-preview."""

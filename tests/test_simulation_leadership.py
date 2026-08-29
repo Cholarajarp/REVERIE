@@ -152,7 +152,7 @@ async def test_lost_lease_stops_loop_without_clobbering_checkpoint():
     engine, rec = make_engine(bc)
 
     async def steal_the_lease():
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0)
         bc._lost = True
 
     asyncio.create_task(steal_the_lease())

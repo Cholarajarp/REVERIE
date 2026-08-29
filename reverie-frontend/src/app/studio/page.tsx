@@ -547,8 +547,10 @@ export default function StudioPage() {
         const dialogues = [...(scene.dialogues ?? [])];
         // Two lines is the backend's per-shot limit for a 10s clip.
         if (dialogues.length >= 2) return scene;
-        const speaker = scene.characters_involved?.[0] ?? "";
-        return { ...scene, dialogues: [...dialogues, { character_name: speaker, line: "" }] };
+        const defaultSpeaker =
+          scene.characters_involved?.[0] ??
+          (isAd ? "Voiceover" : (prev.characters?.[0]?.name ?? "Voiceover"));
+        return { ...scene, dialogues: [...dialogues, { character_name: defaultSpeaker, line: "" }] };
       });
       return { ...prev, script, edited: true };
     });
@@ -754,6 +756,7 @@ export default function StudioPage() {
     // Read ad-ness from the settings the BACKEND returned, which is authoritative
     // for the script under review, and fall back to the current mode.
     const scriptIsAd = AD_STYLES.has(scriptData.settings?.visual_style ?? "") || isAd;
+    const castNames = new Set((scriptData.characters ?? []).map((c: any) => c.name));
     scriptData.script.forEach((scene: any, i: number) => {
       const n = i + 1;
       if (!String(scene.location ?? "").trim()) issues.push(`Scene ${n}: location is empty.`);
@@ -766,10 +769,18 @@ export default function StudioPage() {
       if ((scene.dialogues?.length ?? 0) > 2)
         issues.push(`Scene ${n}: more than 2 dialogue lines for a 10s shot.`);
       (scene.dialogues ?? []).forEach((d: any, j: number) => {
-        if (!String(d.line ?? "").trim())
+        const speaker = String(d.character_name ?? "").trim();
+        const isVoRole = /^(voiceover|narrator|announcer|presenter|vo)/i.test(speaker);
+        if (!String(d.line ?? "").trim()) {
           issues.push(`Scene ${n}, line ${j + 1}: dialogue text is empty.`);
-        else if (!scene.characters_involved?.includes(d.character_name))
-          issues.push(`Scene ${n}, line ${j + 1}: speaker is not in this scene.`);
+        } else if (
+          !scene.characters_involved?.includes(speaker) &&
+          !castNames.has(speaker) &&
+          !isVoRole &&
+          !scriptIsAd
+        ) {
+          issues.push(`Scene ${n}, line ${j + 1}: speaker "${speaker}" is not recognized.`);
+        }
       });
     });
     // Scene CRUD can grow the script past what the daily clip budget allows.
@@ -808,6 +819,10 @@ export default function StudioPage() {
         }));
       const renderPayload = {
         ...scriptData,
+        settings: {
+          ...(scriptData.settings ?? {}),
+          aspect_ratio: scriptData.settings?.aspect_ratio ?? aspectRatio,
+        },
         characters: (scriptData.characters ?? []).map((c: any) => ({
           ...c,
           reference_asset_urls: liveAssets,
@@ -864,15 +879,43 @@ export default function StudioPage() {
             </p>
           </div>
 
-          {/* Stats bar */}
-          <div className="w-full flex items-center gap-4 p-3 rounded border border-white/10 bg-black/30 font-mono text-xs text-white/50">
+          {/* Stats bar with active Aspect Ratio toggle */}
+          <div className="w-full flex items-center gap-4 p-3 rounded border border-white/10 bg-black/30 font-mono text-xs text-white/50 flex-wrap">
             <span><strong className="text-[var(--color-accent)]">{scriptData.script.length}</strong> scenes</span>
             <span className="opacity-30">|</span>
             <span><strong className="text-[var(--color-accent)]">{scriptData.settings?.visual_style ?? visualStyle}</strong> style</span>
             <span className="opacity-30">|</span>
             <span><strong className="text-[var(--color-accent)]">{scriptData.settings?.video_duration ?? videoDuration}</strong> per clip</span>
             <span className="opacity-30">|</span>
-            <span><strong className="text-[var(--color-accent)]">{scriptData.settings?.aspect_ratio ?? aspectRatio}</strong></span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-white/40">Aspect:</span>
+              <div className="flex rounded border border-white/15 overflow-hidden">
+                {(["16:9", "9:16"] as const).map((ratio) => {
+                  const currentRatio = scriptData.settings?.aspect_ratio ?? aspectRatio;
+                  const isSelected = currentRatio === ratio;
+                  return (
+                    <button
+                      key={ratio}
+                      onClick={() => {
+                        setAspectRatio(ratio);
+                        setScriptData((prev: any) => ({
+                          ...prev,
+                          settings: { ...(prev.settings ?? {}), aspect_ratio: ratio },
+                          edited: true,
+                        }));
+                      }}
+                      className={`px-2 py-0.5 text-[10px] font-mono transition-colors cursor-pointer ${
+                        isSelected
+                          ? "bg-[var(--color-accent)] text-black font-bold"
+                          : "bg-white/5 text-white/60 hover:text-white"
+                      }`}
+                    >
+                      {ratio === "9:16" ? "9:16 (Vertical)" : "16:9 (Landscape)"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <span className="ml-auto text-[var(--color-accent-secondary)]">Gemini Omni · max 10s clips</span>
           </div>
 
@@ -1157,53 +1200,69 @@ export default function StudioPage() {
                     />
                   </div>
 
-                  {/* Dialogue */}
+                  {/* Dialogue & Voiceover */}
                   <div className="flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-[9px] uppercase font-mono tracking-wider text-[var(--color-accent)]/70">
-                        Dialogue (max 2 lines)
+                        Dialogue / Voiceover (max 2 lines)
                       </label>
-                      {(scene.dialogues?.length ?? 0) < 2 && (scene.characters_involved?.length ?? 0) > 0 && (
+                      {(scene.dialogues?.length ?? 0) < 2 && (
                         <button
                           onClick={() => addDialogue(idx)}
                           className="text-[9px] font-mono text-white/40 hover:text-[var(--color-accent)] transition-colors cursor-pointer"
                         >
-                          + ADD LINE
+                          + ADD LINE / VOICEOVER
                         </button>
                       )}
                     </div>
-                    {(scene.dialogues ?? []).map((d: any, di: number) => (
-                      <div key={di} className="flex flex-col gap-1 p-2 rounded border border-white/8 bg-black/20">
-                        <div className="flex items-center justify-between gap-2">
-                          <select
-                            value={d.character_name ?? ""}
-                            onChange={(e) => updateDialogue(idx, di, "character_name", e.target.value)}
-                            aria-label={`Scene ${idx + 1} line ${di + 1} speaker`}
-                            className="input-field text-[10px] flex-1"
-                          >
-                            <option value="">Speaker…</option>
-                            {(scene.characters_involved ?? []).map((name: string) => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => removeDialogue(idx, di)}
-                            aria-label={`Remove line ${di + 1} from scene ${idx + 1}`}
-                            className="text-red-500/50 hover:text-red-400 text-xs px-1.5 shrink-0 cursor-pointer transition-colors"
-                          >
-                            ✕
-                          </button>
+                    {(scene.dialogues?.length ?? 0) === 0 && (
+                      <p className="text-[9px] font-mono text-white/25 italic">
+                        No dialogue for this shot (ambient / music only). Click &quot;+ ADD LINE / VOICEOVER&quot; if speech is desired.
+                      </p>
+                    )}
+                    {(scene.dialogues ?? []).map((d: any, di: number) => {
+                      const allSpeakerOptions = [
+                        ...(scene.characters_involved ?? []).map((name: string) => ({ value: name, label: `${name} (On-Screen)` })),
+                        ...(scriptData.characters ?? [])
+                          .filter((c: any) => !(scene.characters_involved ?? []).includes(c.name))
+                          .map((c: any) => ({ value: c.name, label: `${c.name} (Cast)` })),
+                        { value: "Voiceover", label: "🎙️ Voiceover (VO)" },
+                        { value: "Narrator", label: "🎙️ Narrator" },
+                        { value: "Announcer", label: "📢 Announcer" },
+                      ];
+                      return (
+                        <div key={di} className="flex flex-col gap-1 p-2 rounded border border-white/8 bg-black/20">
+                          <div className="flex items-center justify-between gap-2">
+                            <select
+                              value={d.character_name ?? ""}
+                              onChange={(e) => updateDialogue(idx, di, "character_name", e.target.value)}
+                              aria-label={`Scene ${idx + 1} line ${di + 1} speaker`}
+                              className="input-field text-[10px] flex-1"
+                            >
+                              <option value="">Select speaker…</option>
+                              {allSpeakerOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => removeDialogue(idx, di)}
+                              aria-label={`Remove line ${di + 1} from scene ${idx + 1}`}
+                              className="text-red-500/50 hover:text-red-400 text-xs px-1.5 shrink-0 cursor-pointer transition-colors"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={d.line ?? ""}
+                            onChange={(e) => updateDialogue(idx, di, "line", e.target.value)}
+                            placeholder="Spoken line / voiceover text — 12 words or fewer"
+                            aria-label={`Scene ${idx + 1} line ${di + 1} text`}
+                            className="input-field w-full text-xs"
+                          />
                         </div>
-                        <input
-                          type="text"
-                          value={d.line ?? ""}
-                          onChange={(e) => updateDialogue(idx, di, "line", e.target.value)}
-                          placeholder="Spoken line — 12 words or fewer"
-                          aria-label={`Scene ${idx + 1} line ${di + 1} text`}
-                          className="input-field w-full text-xs"
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Per-shot media. Only image assets are offered: Omni takes

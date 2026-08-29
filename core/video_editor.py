@@ -53,35 +53,110 @@ class VideoEditor:
             return None
 
     async def compile_movie(
-        self, scene_assets: List[Dict], target_duration_seconds: Optional[int] = None
+        self,
+        scene_assets: List[Dict],
+        target_duration_seconds: Optional[int] = None,
+        aspect_ratio: str = "16:9",
     ) -> str:
         """
         Concatenate accepted Omni clips into a final film and upload to GCS.
 
         Each entry in scene_assets needs only 'video_uri'.
-        Omni clips already contain audio — we preserve it via the copy codec
-        during concat so no quality is lost.
+        Omni clips already contain audio — we normalize dimensions, aspect ratio,
+        and audio streams so every clip plays seamlessly without distortion.
         """
         if target_duration_seconds is not None and target_duration_seconds <= 0:
             raise ValueError("target_duration_seconds must be positive when supplied.")
         if not self.bucket_name:
             raise RuntimeError("GCS_RENDER_BUCKET is required to compile and deliver a real film.")
         logger.info(
-            "Compiling %s accepted Omni clips%s…",
+            "Compiling %s accepted Omni clips (aspect=%s)%s…",
             len(scene_assets),
+            aspect_ratio,
             f" to {target_duration_seconds}s" if target_duration_seconds else "",
         )
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, self._compile_sync, scene_assets, target_duration_seconds
+            None, self._compile_sync, scene_assets, target_duration_seconds, aspect_ratio
         )
 
+    def _normalize_clip(
+        self, in_path: str, out_path: str, target_w: int, target_h: int
+    ) -> None:
+        """Normalize a single clip to uniform resolution, aspect ratio (SAR 1:1), and audio track."""
+        vf = f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24"
+
+        has_audio = False
+        try:
+            probe = ffmpeg.probe(in_path)
+            has_audio = any(s.get("codec_type") == "audio" for s in probe.get("streams", []))
+        except Exception:
+            has_audio = True  # Default to assuming audio exists
+
+        try:
+            if has_audio:
+                (
+                    ffmpeg
+                    .input(in_path)
+                    .output(
+                        out_path,
+                        vf=vf,
+                        vcodec="libx264",
+                        pix_fmt="yuv420p",
+                        acodec="aac",
+                        audio_bitrate="192k",
+                        ar="44100",
+                        ac="2",
+                    )
+                    .overwrite_output()
+                    .run(quiet=True)
+                )
+            else:
+                in_v = ffmpeg.input(in_path)
+                in_a = ffmpeg.input("anullsrc=channel_layout=stereo:sample_rate=44100", f="lavfi")
+                (
+                    ffmpeg
+                    .output(
+                        in_v.video,
+                        in_a.audio,
+                        out_path,
+                        vf=vf,
+                        vcodec="libx264",
+                        pix_fmt="yuv420p",
+                        acodec="aac",
+                        audio_bitrate="192k",
+                        shortest=None,
+                    )
+                    .overwrite_output()
+                    .run(quiet=True)
+                )
+        except Exception as exc:
+            logger.warning("Clip normalization with audio check failed (%s); trying fallback encode: %s", in_path, exc)
+            (
+                ffmpeg
+                .input(in_path)
+                .output(
+                    out_path,
+                    vf=vf,
+                    vcodec="libx264",
+                    pix_fmt="yuv420p",
+                    acodec="aac",
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
     def _compile_sync(
-        self, scene_assets: List[Dict], target_duration_seconds: Optional[int] = None
+        self,
+        scene_assets: List[Dict],
+        target_duration_seconds: Optional[int] = None,
+        aspect_ratio: str = "16:9",
     ) -> str:
         tmp_files: List[str] = []
         out_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
         tmp_files.append(out_path)
+
+        target_w, target_h = (720, 1280) if str(aspect_ratio).strip() == "9:16" else (1280, 720)
 
         try:
             local_clips: List[str] = []
@@ -100,6 +175,14 @@ class VideoEditor:
             if not local_clips:
                 raise RuntimeError("No clips downloaded — nothing to compile.")
 
+            # Normalize all clips to uniform dimensions and audio properties
+            normalized_clips: List[str] = []
+            for idx, clip in enumerate(local_clips):
+                norm_path = tempfile.NamedTemporaryFile(delete=False, suffix=f"_norm_{idx}.mp4").name
+                tmp_files.append(norm_path)
+                self._normalize_clip(clip, norm_path, target_w, target_h)
+                normalized_clips.append(norm_path)
+
             output_args = {
                 "vcodec": "libx264",
                 "acodec": "aac",
@@ -107,35 +190,30 @@ class VideoEditor:
                 "movflags": "+faststart",
             }
             if target_duration_seconds is not None:
-                # The screenplay can require ceil(runtime / 10) Omni clips. Cut
-                # only the end of the last accepted clip so the advertised film
-                # runtime is true, rather than returning 64 seconds for a 60s film.
+                # Cut only the end of the final accepted clip so the advertised
+                # film runtime is true.
                 output_args["t"] = target_duration_seconds
 
-            if len(local_clips) == 1:
-                # Single clip — re-encode to h264/aac for compatibility.
-                logger.info("Single clip — re-encoding…")
+            if len(normalized_clips) == 1:
+                logger.info("Single normalized clip — applying final output container…")
                 (
                     ffmpeg
-                    .input(local_clips[0])
+                    .input(normalized_clips[0])
                     .output(out_path, **output_args)
                     .overwrite_output()
                     .run(quiet=True)
                 )
             else:
-                # Multiple clips — write a concat list file and use the
-                # concat demuxer.  This is the most reliable FFmpeg concat
-                # approach for clips that may have slightly different headers.
+                # Multiple clips — write concat list file and use the concat demuxer
                 list_file = tempfile.NamedTemporaryFile(
                     delete=False, suffix=".txt", mode="w"
                 )
-                for clip in local_clips:
-                    # FFmpeg concat list requires forward-slashes even on Windows.
+                for clip in normalized_clips:
                     list_file.write(f"file '{clip.replace(os.sep, '/')}'\n")
                 list_file.close()
                 tmp_files.append(list_file.name)
 
-                logger.info(f"Concatenating {len(local_clips)} clips via concat demuxer…")
+                logger.info(f"Concatenating {len(normalized_clips)} normalized {aspect_ratio} clips…")
                 (
                     ffmpeg
                     .input(list_file.name, format="concat", safe=0)

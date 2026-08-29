@@ -426,7 +426,9 @@ class StudioEngine:
         # duration real instead of silently returning an overlong playlist.
         exact_target = min(target_duration_seconds, len(compiled_assets) * duration_seconds)
         final_movie_url = await self.editor.compile_movie(
-            compiled_assets, target_duration_seconds=exact_target
+            compiled_assets,
+            target_duration_seconds=exact_target,
+            aspect_ratio=aspect_ratio,
         )
         logger.info("Living film compiled: %s", final_movie_url)
         return final_movie_url
@@ -846,13 +848,21 @@ Hard rules:
             return None
 
         dialogues: List[Dict[str, str]] = []
+        allowed_speakers = set(valid_names) | {"Narrator", "Voiceover", "VO", "Announcer", "Presenter"}
         for line in raw_scene.get("dialogues") or []:
             if not isinstance(line, dict):
                 continue
             name = str(line.get("character_name") or line.get("character") or "").strip()
             text = _sanitise_prompt(str(line.get("line") or line.get("text") or "").strip())
-            if name in involved and text:
-                dialogues.append({"character_name": name, "line": text[:180]})
+            is_valid_speaker = (
+                name in involved
+                or name in allowed_speakers
+                or any(name.casefold() == s.casefold() for s in allowed_speakers)
+                or (allow_empty_cast and bool(name))
+            )
+            if is_valid_speaker and text:
+                speaker_name = name or "Voiceover"
+                dialogues.append({"character_name": speaker_name, "line": text[:180]})
             if len(dialogues) == 2:
                 break
 

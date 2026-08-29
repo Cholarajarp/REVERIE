@@ -28,6 +28,7 @@ interface Scene {
   /** True only when the renderer accepted the parent interaction. */
   stateful_chain_verified?: boolean;
   scene_asset_labels?: string[];
+  aspect_ratio?: string;
 }
 
 /** A scene can only be played when it has been accepted AND has a video. */
@@ -87,6 +88,18 @@ export default function ScreeningPage() {
   const [scenesApproved, setScenesApproved] = useState(0);
   const [scenesUnverified, setScenesUnverified] = useState(0);
   const [reviewMode, setReviewMode] = useState<string>("advisory");
+  const [aspectRatio, setAspectRatio] = useState<string>("16:9");
+
+  // Read production aspect ratio from studio session
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("reverie_settings");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.aspectRatio) setAspectRatio(parsed.aspectRatio);
+      }
+    } catch {}
+  }, []);
 
   // Action button states
   const [isStopping, setIsStopping]   = useState(false);
@@ -315,6 +328,26 @@ export default function ScreeningPage() {
             {isClearing ? "⏳ CLEARING…" : clearMsg || "🗑 CLEAR ALL SCENES"}
           </button>
 
+          {/* Format aspect ratio toggle */}
+          <button
+            onClick={() => setAspectRatio((prev) => (prev === "9:16" ? "16:9" : "9:16"))}
+            title="Toggle between 9:16 vertical and 16:9 widescreen view"
+            style={{
+              padding: "6px 12px",
+              background: (currentScene?.aspect_ratio || aspectRatio) === "9:16" ? "rgba(124,92,216,0.2)" : "rgba(255,255,255,0.04)",
+              border: (currentScene?.aspect_ratio || aspectRatio) === "9:16" ? "1px solid rgba(124,92,216,0.6)" : "1px solid rgba(255,255,255,0.15)",
+              borderRadius: "4px",
+              color: (currentScene?.aspect_ratio || aspectRatio) === "9:16" ? "#b9a5f0" : "rgba(255,255,255,0.6)",
+              cursor: "pointer",
+              fontSize: "10px",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              fontFamily: "inherit",
+            }}
+          >
+            {(currentScene?.aspect_ratio || aspectRatio) === "9:16" ? "📱 9:16 VERTICAL" : "🖥️ 16:9 WIDESCREEN"}
+          </button>
+
           <Link href="/studio" style={{ padding: "6px 14px", background: "rgba(201,165,90,0.12)", border: "1px solid rgba(201,165,90,0.35)", borderRadius: "4px", color: "#c9a55a", textDecoration: "none", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase" }}>
             ▶ NEW FILM
           </Link>
@@ -389,92 +422,105 @@ export default function ScreeningPage() {
           ) : (
             <>
               {/* ── Video Player ── */}
-              <div style={{ width: "100%", maxWidth: "960px", aspectRatio: "16/9", background: "#000", borderRadius: "6px", overflow: "hidden", position: "relative", boxShadow: "0 0 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)", flexShrink: 0 }}>
-                <AnimatePresence mode="wait">
-                  <motion.div key={currentScene?.scene_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} style={{ width: "100%", height: "100%" }}>
-                    {isPlayable(currentScene) ? (
-                      <video
-                        ref={videoRef}
-                        src={currentScene!.video_uri}
-                        controls
-                        playsInline
-                        preload="auto"
-                        onEnded={handleVideoEnd}
-                        onError={handleVideoError}
-                        onCanPlay={handleCanPlay}
-                        onPlay={() => setIsPlaying(true)}
-                        onPause={() => setIsPlaying(false)}
-                        /* contain, not cover: a screening room must show the whole
-                           frame. cover silently cropped every clip, which also hid
-                           composition problems the Director is meant to catch. */
-                        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
-                      />
-                    ) : currentScene?.status === "rendering" ? (
-                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-                        <div style={{ width: "32px", height: "32px", border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#facc15", borderRadius: "50%", animation: "spin 1.2s linear infinite" }} />
-                        <p style={{ fontSize: "11px", color: "#facc15", letterSpacing: "0.12em" }}>OMNI RENDERING…</p>
-                        <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", maxWidth: "320px", textAlign: "center", lineHeight: 1.5 }}>{(currentScene.omni_prompt || currentScene.veo_prompt)?.substring(0, 120)}…</p>
-                      </div>
-                    ) : currentScene?.status === "queued" ? (
-                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px" }}>
-                        <p style={{ fontSize: "11px", color: "#60a5fa", letterSpacing: "0.12em" }}>⏳ QUEUED FOR RENDERING</p>
-                        <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", maxWidth: "320px", textAlign: "center", lineHeight: 1.5 }}>{(currentScene.omni_prompt || currentScene.veo_prompt)?.substring(0, 120)}…</p>
-                      </div>
-                    ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px" }}>
-                        <p style={{ fontSize: "32px" }}>⚠️</p>
-                        <p style={{ fontSize: "11px", color: "#f87171", letterSpacing: "0.12em" }}>OMNI GENERATION FAILED</p>
-                        <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.3)", maxWidth: "280px", textAlign: "center", lineHeight: 1.5 }}>
-                          {currentScene?.failure_reason || currentScene?.critique || "This candidate was rejected before it could enter the film."}
-                        </p>
+              {(() => {
+                const effectiveAspect = currentScene?.aspect_ratio || aspectRatio || "16:9";
+                const isVertical = effectiveAspect === "9:16";
+                return (
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: isVertical ? "420px" : "960px",
+                      aspectRatio: isVertical ? "9/16" : "16/9",
+                      maxHeight: isVertical ? "calc(100vh - 230px)" : "calc(100vh - 240px)",
+                      background: "#000",
+                      borderRadius: "6px",
+                      overflow: "hidden",
+                      position: "relative",
+                      boxShadow: "0 0 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <AnimatePresence mode="wait">
+                      <motion.div key={currentScene?.scene_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} style={{ width: "100%", height: "100%" }}>
+                        {isPlayable(currentScene) ? (
+                          <video
+                            ref={videoRef}
+                            src={currentScene!.video_uri}
+                            controls
+                            playsInline
+                            preload="auto"
+                            onEnded={handleVideoEnd}
+                            onError={handleVideoError}
+                            onCanPlay={handleCanPlay}
+                            onPlay={() => setIsPlaying(true)}
+                            onPause={() => setIsPlaying(false)}
+                            style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+                          />
+                        ) : currentScene?.status === "rendering" ? (
+                          <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px" }}>
+                            <div style={{ width: "32px", height: "32px", border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#facc15", borderRadius: "50%", animation: "spin 1.2s linear infinite" }} />
+                            <p style={{ fontSize: "11px", color: "#facc15", letterSpacing: "0.12em" }}>OMNI RENDERING…</p>
+                            <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", maxWidth: "320px", textAlign: "center", lineHeight: 1.5 }}>{(currentScene.omni_prompt || currentScene.veo_prompt)?.substring(0, 120)}…</p>
+                          </div>
+                        ) : currentScene?.status === "queued" ? (
+                          <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+                            <p style={{ fontSize: "11px", color: "#60a5fa", letterSpacing: "0.12em" }}>⏳ QUEUED FOR RENDERING</p>
+                            <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", maxWidth: "320px", textAlign: "center", lineHeight: 1.5 }}>{(currentScene.omni_prompt || currentScene.veo_prompt)?.substring(0, 120)}…</p>
+                          </div>
+                        ) : (
+                          <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+                            <p style={{ fontSize: "32px" }}>⚠️</p>
+                            <p style={{ fontSize: "11px", color: "#f87171", letterSpacing: "0.12em" }}>OMNI GENERATION FAILED</p>
+                            <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.3)", maxWidth: "280px", textAlign: "center", lineHeight: 1.5 }}>
+                              {currentScene?.failure_reason || currentScene?.critique || "This candidate was rejected before it could enter the film."}
+                            </p>
+                          </div>
+                        )}
+                      </motion.div>
+                    </AnimatePresence>
+
+                    {/* Scene overlay */}
+                    {currentScene && (
+                      <div style={{ position: "absolute", bottom: "44px", left: "14px", right: "14px", display: "flex", justifyContent: "space-between", alignItems: "flex-end", pointerEvents: "none" }}>
+                        <div>
+                          <div style={{ fontSize: "9px", letterSpacing: "0.15em", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                            SHOT {shotNumber} OF {totalClips || "?"}
+                          </div>
+                          <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "3px", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                            {currentScene.characters_involved?.join(" · ")}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px" }}>
+                          <span style={{ fontSize: "9px", color: STATUS_COLOR[currentScene.status] ?? "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                            ● {STATUS_LABEL[currentScene.status] ?? currentScene.status.toUpperCase()}
+                          </span>
+                          {currentScene.drama_score != null && (
+                            <span style={{ fontSize: "9px", color: "#c9a55a", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                              TENSION {(currentScene.drama_score * 100).toFixed(0)}%
+                            </span>
+                          )}
+                          {continuityPct !== null && (
+                            <span
+                              title="Continuity score reported by the visual critic."
+                              style={{ fontSize: "9px", color: currentScene.review_mode === "director_approved" ? "#4ade80" : "#facc15", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
+                            >
+                              CONTINUITY {continuityPct}%
+                            </span>
+                          )}
+                          {(() => {
+                            const badge = REVIEW_BADGE[currentScene.review_mode ?? "unverified"];
+                            return badge ? (
+                              <span title={badge.title} style={{ fontSize: "9px", color: badge.color, textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                                {badge.label}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                       </div>
                     )}
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* Scene overlay */}
-                {currentScene && (
-                  <div style={{ position: "absolute", bottom: "44px", left: "14px", right: "14px", display: "flex", justifyContent: "space-between", alignItems: "flex-end", pointerEvents: "none" }}>
-                    <div>
-                      <div style={{ fontSize: "9px", letterSpacing: "0.15em", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
-                        SHOT {shotNumber} OF {totalClips || "?"}
-                      </div>
-                      <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "3px", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
-                        {currentScene.characters_involved?.join(" · ")}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px" }}>
-                      <span style={{ fontSize: "9px", color: STATUS_COLOR[currentScene.status] ?? "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
-                        ● {STATUS_LABEL[currentScene.status] ?? currentScene.status.toUpperCase()}
-                      </span>
-                      {/* Only shown when the writer actually scored this beat.
-                          The old build printed `(drama_score ?? 0) * 100`, so an
-                          unscored shot displayed a confident "DRAMA 0%". */}
-                      {currentScene.drama_score != null && (
-                        <span style={{ fontSize: "9px", color: "#c9a55a", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
-                          TENSION {(currentScene.drama_score * 100).toFixed(0)}%
-                        </span>
-                      )}
-                      {continuityPct !== null && (
-                        <span
-                          title="Continuity score reported by the visual critic."
-                          style={{ fontSize: "9px", color: currentScene.review_mode === "director_approved" ? "#4ade80" : "#facc15", textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
-                        >
-                          CONTINUITY {continuityPct}%
-                        </span>
-                      )}
-                      {(() => {
-                        const badge = REVIEW_BADGE[currentScene.review_mode ?? "unverified"];
-                        return badge ? (
-                          <span title={badge.title} style={{ fontSize: "9px", color: badge.color, textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
-                            {badge.label}
-                          </span>
-                        ) : null;
-                      })()}
-                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* ── Playback Controls ── */}
               <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>

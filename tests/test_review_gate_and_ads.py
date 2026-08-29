@@ -323,3 +323,62 @@ def test_brand_is_threaded_through_both_studio_entry_points():
 
     assert "brand" in inspect.signature(StudioEngine.simulate_script).parameters
     assert "brand" in inspect.signature(StudioEngine.generate_movie).parameters
+
+
+def test_ad_normalisation_permits_voiceover_and_narrator_dialogue():
+    """Ads often have off-screen Voiceover or Narrator, which must not be stripped."""
+    scene = {
+        "location": "Modern Kitchen",
+        "drama_beat": "A sleek blender whips a smoothie in seconds.",
+        "characters_involved": [],
+        "dialogues": [
+            {"character_name": "Voiceover", "line": "Start your day with pure energy."},
+        ],
+    }
+    normalised = StudioEngine._normalise_scene(scene, set(), allow_empty_cast=True)
+    assert normalised is not None
+    assert len(normalised["dialogues"]) == 1
+    assert normalised["dialogues"][0]["character_name"] == "Voiceover"
+    assert normalised["dialogues"][0]["line"] == "Start your day with pure energy."
+
+
+def test_cinematographer_aspect_ratio_and_audio_prompts():
+    """Cinematographer must generate explicit 9:16 vertical directives and audio cues."""
+    from agents.cinematographer_agent import CinematographerAgent
+
+    agent = CinematographerAgent()
+    agent.aspect_ratio = "9:16"
+    agent.set_character_visuals({"Maya": "runner in teal jacket"})
+
+    prompt = run(
+        agent.generate_omni_prompt(
+            drama_beat="Maya laces her shoes and smiles.",
+            characters_involved=["Maya"],
+            location="Trailhead",
+            dialogues=[{"character_name": "Maya", "line": "Ready to go."}],
+        )
+    )
+    assert "9:16 vertical portrait format" in prompt
+    assert "AUDIO & SPOKEN DIALOGUE / VOICEOVER" in prompt
+    assert 'Maya says: "Ready to go."' in prompt
+
+    # Test 16:9 widescreen
+    agent.aspect_ratio = "16:9"
+    prompt_16_9 = run(
+        agent.generate_omni_prompt(
+            drama_beat="Maya laces her shoes.",
+            characters_involved=["Maya"],
+            location="Trailhead",
+        )
+    )
+    assert "16:9 widescreen landscape format" in prompt_16_9
+
+
+def test_video_editor_aspect_ratio_parameter():
+    """VideoEditor.compile_movie must accept and process aspect_ratio."""
+    import inspect
+    from core.video_editor import VideoEditor
+
+    sig = inspect.signature(VideoEditor.compile_movie)
+    assert "aspect_ratio" in sig.parameters
+

@@ -295,12 +295,25 @@ class CinematographerAgent:
         if transition:
             parts.append(f"Continuity transition: {transition}")
 
+        # Framing & Aspect Ratio
+        if self.aspect_ratio == "9:16":
+            parts.append(
+                "Framing & Aspect Ratio: 9:16 vertical portrait format (full-height mobile composition, vertical framing, no letterboxing or horizontal borders)."
+            )
+        else:
+            parts.append(
+                "Framing & Aspect Ratio: 16:9 widescreen landscape format (horizontal cinematic composition)."
+            )
+
         # The shot itself
         parts.append(f"Scene {n} of {total}: {drama_beat}")
 
-        # Dialogue embedded as voice lines
+        # Dialogue embedded as audible voice lines with audio direction
         if dialogue_lines:
-            parts.append("Spoken aloud: " + "  ".join(dialogue_lines))
+            dialogue_str = "  ".join(dialogue_lines)
+            parts.append(
+                f"AUDIO & SPOKEN DIALOGUE / VOICEOVER: The video must feature clear, audible spoken voice acting with synchronized audio. {dialogue_str}. High clarity voice track with natural ambient environment sound."
+            )
 
         # Style
         parts.append(f"Visual style: {style}.")

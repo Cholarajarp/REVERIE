@@ -83,7 +83,8 @@ async def run_one_tick(engine):
     engine.is_running = True
 
     async def stop():
-        await asyncio.sleep(0.05)
+        while engine.total_ticks_run < 1 and engine.is_running:
+            await asyncio.sleep(0.001)
         engine.is_running = False
 
     asyncio.create_task(stop())

@@ -37,14 +37,15 @@ MAX_GOAL_LENGTH = 200
 
 class SimulationEngine:
     def __init__(self, characters: List[CharacterAgent], director: DirectorAgent,
-                 cinematographer: CinematographerAgent, omni: OmniPipeline,
-                 world_repo: WorldRepository, char_repo: CharacterRepository,
-                 scene_repo: SceneRepository, broadcaster=None,
-                 tts_pipeline: Optional[TTSPipeline] = None):
+                 cinematographer: CinematographerAgent, omni: Optional[OmniPipeline] = None,
+                 world_repo: WorldRepository = None, char_repo: CharacterRepository = None,
+                 scene_repo: SceneRepository = None, broadcaster=None,
+                 tts_pipeline: Optional[TTSPipeline] = None, veo: Optional[Any] = None, **kwargs):
         self.characters = characters
         self.director = director
         self.cinematographer = cinematographer
-        self.omni = omni
+        self.omni = omni or veo
+        self.veo = self.omni
         self.tts = tts_pipeline or TTSPipeline()
         self.world_repo = world_repo
         self.char_repo = char_repo
@@ -143,11 +144,11 @@ class SimulationEngine:
                     break
 
                 # Stop when enough clips have been generated for the film
-                if self.cinematographer.is_film_complete:
+                if getattr(self.cinematographer, "is_film_complete", False) is True:
                     logger.info(
-                        f"Film complete! Generated {self.cinematographer._scenes_generated}/"
-                        f"{self.cinematographer.total_clips_needed} scenes for "
-                        f"{self.cinematographer.film_duration_minutes}-minute film. "
+                        f"Film complete! Generated {getattr(self.cinematographer, '_scenes_generated', '?')}/"
+                        f"{getattr(self.cinematographer, 'total_clips_needed', '?')} scenes for "
+                        f"{getattr(self.cinematographer, 'film_duration_minutes', '?')}-minute film. "
                         f"Stopping simulation."
                     )
                     break
