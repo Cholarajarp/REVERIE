@@ -440,45 +440,32 @@ class OmniPipeline:
         else:
             chained_parts = fresh_parts
 
-        def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
-            """Call interactions.create with exponential backoff on 429.
+        _fallback_model = FALLBACK_OMNI_MODEL_ID  # capture at closure time
 
-            Returns (interaction, model_used). If the primary model exhausts
-            all retries, falls back to FALLBACK_OMNI_MODEL_ID automatically.
+        def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
+            """Try primary model once; on 429 immediately fall back to lite.
+
+            Returns (interaction, model_used).
             """
-            import time as _time
-            delays = [65, 90, 120]
-            # Phase 1: retry primary model with backoff.
-            for attempt, delay in enumerate(delays):
-                try:
-                    return client.interactions.create(model=model, **kwargs), model
-                except Exception as exc:
-                    msg = str(exc)
-                    is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
-                    if is_quota and attempt < len(delays) - 1:
-                        logger.warning(
-                            "[Omni] 429 on %s — waiting %ss before retry %s/%s",
-                            model, delay, attempt + 1, len(delays) - 1,
-                        )
-                        _time.sleep(delay)
-                        continue
-                    if is_quota:
-                        # Primary exhausted — try fallback model once.
-                        fallback = FALLBACK_OMNI_MODEL_ID
-                        logger.warning(
-                            "[Omni] Primary model %s quota exhausted after %s retries — "
-                            "falling back to %s",
-                            model, len(delays), fallback,
-                        )
-                        try:
-                            return client.interactions.create(model=fallback, **kwargs), fallback
-                        except Exception as fb_exc:
-                            logger.error("[Omni] Fallback model %s also failed: %s", fallback, fb_exc)
-                            raise RuntimeError(
-                                f"Both {model} and fallback {fallback} failed. "
-                                f"Primary: {exc}. Fallback: {fb_exc}"
-                            ) from fb_exc
-                    raise
+            try:
+                return client.interactions.create(model=model, **kwargs), model
+            except Exception as exc:
+                msg = str(exc)
+                is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
+                if is_quota:
+                    logger.warning(
+                        "[Omni] 429 on %s — switching immediately to fallback %s",
+                        model, _fallback_model,
+                    )
+                    try:
+                        return client.interactions.create(model=_fallback_model, **kwargs), _fallback_model
+                    except Exception as fb_exc:
+                        logger.error("[Omni] Fallback %s also failed: %s", _fallback_model, fb_exc)
+                        raise RuntimeError(
+                            f"Both {model} and fallback {_fallback_model} failed. "
+                            f"Primary: {exc}. Fallback: {fb_exc}"
+                        ) from fb_exc
+                raise
 
         def _generate() -> tuple[bytes, str, bool]:
             logger.info(
