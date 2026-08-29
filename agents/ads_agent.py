@@ -269,13 +269,27 @@ Hard rules:
             "compliance_rewrites": 0,
             "cta_appended": False,
         }
-        if not isinstance(shots, list) or len(shots) != total_clips:
+        if not isinstance(shots, list) or len(shots) == 0:
             logger.error(
-                "Ads specialist returned %s shots, expected %s.",
-                len(shots) if isinstance(shots, list) else "invalid output",
-                total_clips,
+                "Ads specialist returned invalid output, expected %s shots.", total_clips
             )
             return [], report
+
+        if len(shots) != total_clips:
+            logger.warning(
+                "Ads specialist returned %s shots, expected %s — adjusting.",
+                len(shots),
+                total_clips,
+            )
+            if len(shots) > total_clips:
+                # Trim excess shots, keep CTA-bearing last shot.
+                shots = shots[:total_clips - 1] + [shots[-1]]
+            else:
+                # Pad by repeating the last shot with adjusted beat.
+                while len(shots) < total_clips:
+                    pad = dict(shots[-1])
+                    pad["drama_beat"] = f"Continuation — {pad.get('drama_beat', '')}"
+                    shots.append(pad)
 
         clean = self._scrub_shots(shots, report)
         self._enforce_cta(clean, cta, report)

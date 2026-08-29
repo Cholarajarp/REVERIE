@@ -168,7 +168,7 @@ class StudioEngine:
             return {"status": "error", "detail": str(exc)}
 
         total_clips = math.ceil(target_duration_seconds / OMNI_CLIP_DURATION_SECONDS)
-        # Minimum 1 clip — a 20s ad = 2 clips, a 40s ad = 4 clips
+        # Minimum 1 clip — e.g. 30s ad = 3 clips, 60s ad = 6 clips
         total_clips = max(1, total_clips)
         if total_clips > self.omni.daily_clip_budget:
             max_seconds = self.omni.daily_clip_budget * OMNI_CLIP_DURATION_SECONDS

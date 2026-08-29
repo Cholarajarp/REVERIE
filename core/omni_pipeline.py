@@ -34,7 +34,7 @@ OMNI_CLIP_DURATION_SECONDS = 10
 # reject valid video on a minor timing difference.
 MIN_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MIN_CLIP_SECONDS", "1.0"))
 MAX_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MAX_CLIP_SECONDS", "12.0"))
-DEFAULT_OMNI_MODEL_ID = "gemini-omni-flash-preview"
+DEFAULT_OMNI_MODEL_ID = "gemini-omni-1.1-flash-preview"
 DEFAULT_DAILY_CLIP_BUDGET = 24
 MAX_REFERENCE_IMAGES = 6
 INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "15"))
