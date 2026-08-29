@@ -97,7 +97,7 @@ flowchart TB
     end
 
     subgraph GCP["Google Cloud Managed Services"]
-        OMNI["Gemini Omni Flash\ngemini-omni-flash-preview\nVideo + native audio"]
+        OMNI["Gemini Omni Flash\ngemini-omni-1.1-flash\nVideo + native audio"]
         GEMINI["Gemini 3.5 Flash\nVertex AI\nPlanning · Critique · Cast generation"]
         FS[("Cloud Firestore\nScene records\nCharacter memory\nOmni budget counter")]
         GCS[("Cloud Storage\nOmni clips\nFinal film MP4")]
@@ -249,7 +249,7 @@ gcloud run deploy reverie \
   --allow-unauthenticated \
   --memory 2Gi --cpu 2 \
   --set-env-vars="GOOGLE_CLOUD_PROJECT=YOUR_PROJECT,GCS_RENDER_BUCKET=your-bucket,\
-OMNI_MODEL_ID=gemini-omni-flash-preview,OMNI_DAILY_CLIP_BUDGET=100,\
+OMNI_MODEL_ID=gemini-omni-1.1-flash,OMNI_DAILY_CLIP_BUDGET=100,\
 MAX_CONTINUITY_RETAKES_PER_FILM=4,ALLOW_PARTIAL_FILMS=true"
 ```
 
@@ -310,7 +310,7 @@ reverie/
 | `GOOGLE_CLOUD_PROJECT` | ✅ | — | GCP Project ID. Auth via Vertex AI ADC — no API key. |
 | `GCS_RENDER_BUCKET` | ✅ | — | GCS bucket for Omni clips and final film |
 | `GOOGLE_CLOUD_LOCATION` | No | `global` | Location for Omni renders |
-| `OMNI_MODEL_ID` | No | `gemini-omni-flash-preview` | Omni model for video generation |
+| `OMNI_MODEL_ID` | No | `gemini-omni-1.1-flash` | Omni model for video generation |
 | `OMNI_DAILY_CLIP_BUDGET` | No | `24` | Atomic cap on Omni calls per UTC day |
 | `MAX_CONTINUITY_RETAKES_PER_FILM` | No | `4` | Maximum separately-budgeted retakes per film |
 | `CONTINUITY_REVIEW_MODE` | No | `advisory` | `enforce` / `advisory` / `off` |
@@ -346,7 +346,7 @@ npm run build
 | Omni aspect ratio: 16:9 or 9:16 only | UI offers only these two. `reserve_omni_budget()` rejects any other value before the API call. |
 | Character identity is probabilistic | IMAGE LOCK + stateful chain is the strongest available mechanism — not a guarantee. Each shot is labelled with how it was reviewed. `unverified` is never displayed as `approved`. |
 | `previous_interaction_id` may be rejected | Fallback to unchained with cast-lock reference images. Shot is marked `CONTINUITY: PROMPT LEDGER ONLY`. |
-| Omni is preview software | `gemini-omni-flash-preview` API contract may change. |
+| Omni is preview software | `gemini-omni-1.1-flash` API contract may change. |
 
 ---
 

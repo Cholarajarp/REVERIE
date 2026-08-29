@@ -44,7 +44,7 @@ flowchart TB
     end
 
     subgraph GCP["Google Cloud Managed Services"]
-        OMNI["Gemini Omni Flash\ngemini-omni-flash-preview\nVideo + native audio"]
+        OMNI["Gemini Omni Flash\ngemini-omni-1.1-flash\nVideo + native audio"]
         GEMINI["Gemini 3.5 Flash\nVertex AI\nPlanning · Critique · Cast generation"]
         FS[("Cloud Firestore\nScene records\nCharacter memory\nOmni budget counter")]
         GCS[("Cloud Storage\nOmni clips\nFinal film MP4")]
@@ -448,5 +448,5 @@ This means REVERIE was built *with* an agentic platform *to build* an agentic pl
 | Omni has no duration control | `ffprobe` measures every returned MP4; warns if outside range; never rejects good video |
 | Stateful chain may be rejected | Falls back unchained, keeps cast-lock reference images, marks shot `CONTINUITY: PROMPT LEDGER ONLY` |
 | Character identity is probabilistic | Image lock + stateful chain is the strongest available mechanism — not a guarantee; every shot is labelled with how it was reviewed |
-| Omni is preview software | `gemini-omni-flash-preview` API contract may change |
+| Omni is preview software | `gemini-omni-1.1-flash` API contract may change |
 | Director critic may hit quota | Advisory mode keeps the clip and labels it `unverified` rather than failing the entire film on a quota blip |

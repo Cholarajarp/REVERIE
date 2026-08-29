@@ -332,8 +332,8 @@ async def debug_omni_test():
     renderer_ready = project_configured and bucket_configured
     return {
         "status": "ready" if renderer_ready else "misconfigured",
-        "renderer": "gemini-omni-flash-preview",
-        "model": os.getenv("OMNI_MODEL_ID", "gemini-omni-flash-preview"),
+        "renderer": "gemini-omni-1.1-flash",
+        "model": os.getenv("OMNI_MODEL_ID", "gemini-omni-1.1-flash"),
         "auth": "vertex_ai_adc",
         "gcp_project_configured": project_configured,
         "gcs_render_bucket_configured": bucket_configured,
