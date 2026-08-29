@@ -37,7 +37,7 @@ MAX_ACCEPTED_CLIP_SECONDS = float(os.getenv("OMNI_MAX_CLIP_SECONDS", "12.0"))
 DEFAULT_OMNI_MODEL_ID = "gemini-omni-1.1-flash-preview"
 DEFAULT_DAILY_CLIP_BUDGET = 24
 MAX_REFERENCE_IMAGES = 6
-INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "5"))
+INTER_CLIP_DELAY_SECONDS = int(os.getenv("OMNI_INTER_CLIP_DELAY_SECONDS", "25"))
 
 _DATA_IMAGE_RE = re.compile(
     r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$",
@@ -441,20 +441,29 @@ class OmniPipeline:
             chained_parts = fresh_parts
 
         def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
-            """Retry on 429 with backoff until quota resets."""
+            """On 429 wait 25s and retry on same model, then try omni-flash-preview."""
             import time as _time
-            for attempt in range(3):
-                try:
-                    return client.interactions.create(model=model, **kwargs), model
-                except Exception as exc:
-                    msg = str(exc)
-                    is_quota = "429" in msg or "quota" in msg.lower() or "too_many_requests" in msg.lower()
-                    if is_quota and attempt < 2:
-                        wait = 65 * (attempt + 1)
-                        logger.warning("[Omni] 429 attempt %s — waiting %ss for quota reset", attempt + 1, wait)
-                        _time.sleep(wait)
-                        continue
+            # Attempt 1: primary
+            try:
+                return client.interactions.create(model=model, **kwargs), model
+            except Exception as exc:
+                msg = str(exc)
+                if "429" not in msg and "quota" not in msg.lower() and "too_many_requests" not in msg.lower():
                     raise
+            # 429 hit — wait one quota window then retry primary
+            logger.warning("[Omni] 429 on %s — waiting 25s then retrying", model)
+            _time.sleep(25)
+            try:
+                return client.interactions.create(model=model, **kwargs), model
+            except Exception as exc2:
+                msg2 = str(exc2)
+                if "429" not in msg2 and "quota" not in msg2.lower() and "too_many_requests" not in msg2.lower():
+                    raise
+            # Still 429 — try the other Omni model (same quota pool, different slot)
+            fallback = "gemini-omni-flash-preview" if "1.1" in model else "gemini-omni-1.1-flash-preview"
+            logger.warning("[Omni] Still 429 — trying %s", fallback)
+            _time.sleep(25)
+            return client.interactions.create(model=fallback, **kwargs), fallback
 
         def _generate() -> tuple[bytes, str, bool]:
             logger.info(
