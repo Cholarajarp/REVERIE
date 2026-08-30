@@ -398,28 +398,65 @@ class OmniPipeline:
             raise ValueError("Cannot render an empty Omni prompt.")
         client = self._get_genai_client()
 
+        # ── API-level config: aspect ratio, modalities ──────────────────────
+        # The text-only aspect ratio directive was being ignored by the model;
+        # the config parameter is the authoritative control that the API enforces
+        # at the renderer level, guaranteeing the output frame dimensions.
+        try:
+            from google.genai import types as genai_types
+            omni_config = genai_types.InteractionConfig(
+                response_modalities=["VIDEO", "AUDIO"],
+                output_video=genai_types.VideoGenerationConfig(
+                    aspect_ratio=aspect_ratio,
+                ),
+            )
+        except (ImportError, AttributeError, TypeError) as exc:
+            # SDK version may not support this config shape yet — fall back to
+            # text-only aspect directive and log the gap.
+            logger.warning(
+                "[Omni] Could not construct InteractionConfig (%s); "
+                "falling back to text-only aspect directive.", exc,
+            )
+            omni_config = None
+
         # Build the input list that Omni expects.
         # Structure mirrors the user's working SDK sample:
         #   input=[{"type": "image", ...}, {"type": "text", "text": "..."}]
         aspect_directive = (
-            "Framing & Aspect Ratio: 9:16 vertical portrait format (full-height mobile composition, 9:16 aspect ratio, no horizontal pillarboxing or letterboxing)."
+            "MANDATORY FRAMING: 9:16 vertical portrait format. The entire video MUST be rendered in 9:16 vertical aspect ratio. Full-height mobile composition, no horizontal pillarboxing or letterboxing."
             if aspect_ratio == "9:16"
-            else "Framing & Aspect Ratio: 16:9 widescreen landscape format (16:9 aspect ratio)."
+            else "MANDATORY FRAMING: 16:9 widescreen landscape format. The entire video MUST be rendered in 16:9 horizontal aspect ratio."
         )
+
+        def _build_reference_instructions(refs: List[OmniReferenceImage]) -> str:
+            """Build precise per-image instructions distinguishing character vs asset."""
+            if not refs:
+                return ""
+            lines = []
+            for index, ref in enumerate(refs):
+                lines.append(
+                    f"- PROVIDED IMAGE #{index + 1} is \"{ref.name}\": "
+                    f"This image MUST appear faithfully and recognisably in this video shot. "
+                    f"Reproduce its exact visual appearance, colors, details, and identity. "
+                    f"Do NOT replace it with a different image or interpretation."
+                )
+            return (
+                "VISUAL REFERENCE IMAGES (MANDATORY — reproduce these EXACTLY):\n"
+                + "\n".join(lines)
+                + "\n\nCRITICAL: Every provided reference image MUST be visually "
+                "present and clearly recognisable in the generated video. "
+                "Match the exact appearance — do not substitute, reinterpret, "
+                "or omit any referenced image.\n\n"
+            )
 
         def _fresh_parts() -> List[Dict[str, Any]]:
             """Self-contained input: subject and scene references first, then the prompt."""
             if not references:
                 return [{"type": "text", "text": f"{aspect_directive}\n\n{prompt}"}]
-            identity_lines = "\n".join(
-                f"- Image #{index + 1} ({ref.name}): use this exact visual appearance / identity / product representation in the shot."
-                for index, ref in enumerate(references)
-            )
+            ref_instructions = _build_reference_instructions(references)
             tagged_prompt = (
                 f"{aspect_directive}\n\n"
-                "VISUAL REFERENCE MAP:\n"
-                f"{identity_lines}\n\n"
-                "INSTRUCTION: Feature the referenced subject(s) and scene/product asset(s) faithfully in this shot matching the reference images.\n\n"
+                f"{ref_instructions}"
                 f"{prompt}"
             )
             parts: List[Dict[str, Any]] = [
@@ -438,15 +475,8 @@ class OmniPipeline:
                 "changes them. Single continuous shot; no montage.\n\n"
             )
             if references:
-                identity_lines = "\n".join(
-                    f"- Image #{index + 1} ({ref.name}): use this exact visual appearance / identity / product representation in the shot."
-                    for index, ref in enumerate(references)
-                )
-                continuation_text += (
-                    "VISUAL REFERENCE MAP FOR THIS SHOT:\n"
-                    f"{identity_lines}\n\n"
-                    "INSTRUCTION: Feature the referenced subject(s) and scene/product asset(s) faithfully in this shot matching the reference images.\n\n"
-                )
+                ref_instructions = _build_reference_instructions(references)
+                continuation_text += ref_instructions
                 parts: List[Dict[str, Any]] = [
                     {"type": "image", "data": ref.data, "mime_type": ref.mime_type}
                     for ref in references
@@ -461,9 +491,19 @@ class OmniPipeline:
         def _omni_create_with_retry(model: str, **kwargs) -> tuple[Any, str]:
             """On 429 wait 25s and retry on same model, then try omni-flash-preview."""
             import time as _time
+            # Inject the config if the SDK supports it.
+            if omni_config is not None and "config" not in kwargs:
+                kwargs["config"] = omni_config
             # Attempt 1: primary
             try:
                 return client.interactions.create(model=model, **kwargs), model
+            except TypeError as te:
+                # SDK version doesn't support the config kwarg — retry without it.
+                if "config" in str(te) and "config" in kwargs:
+                    logger.warning("[Omni] SDK rejected 'config' kwarg; retrying without it.")
+                    kwargs.pop("config", None)
+                    return client.interactions.create(model=model, **kwargs), model
+                raise
             except Exception as exc:
                 msg = str(exc)
                 if "429" not in msg and "quota" not in msg.lower() and "too_many_requests" not in msg.lower():
@@ -485,10 +525,11 @@ class OmniPipeline:
 
         def _generate() -> tuple[bytes, str, bool]:
             logger.info(
-                "[Omni] interactions.create model=%s references=%s aspect=%s parent=%s",
+                "[Omni] interactions.create model=%s references=%s aspect=%s config=%s parent=%s",
                 self.omni_model_id,
                 len(references),
                 aspect_ratio,
+                "yes" if omni_config else "text-only",
                 previous_interaction_id or "none",
             )
             chain_used = False

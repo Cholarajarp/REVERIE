@@ -493,6 +493,7 @@ class StudioEngine:
                 dialogues=scene_data["dialogues"],
                 continuity=scene_data.get("continuity") or {},
                 critique_feedback=str(scene_data.get("last_critique") or ""),
+                scene_asset_labels=attached_labels or (scene_data.get("scene_asset_labels") or []),
             )
             scene_id = f"{production_id[:10]}-s{scene_index + 1:02d}-a{attempt + 1}"
             scene_record = await self.omni.reserve_omni_budget(

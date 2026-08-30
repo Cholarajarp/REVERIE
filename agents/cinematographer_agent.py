@@ -207,6 +207,7 @@ class CinematographerAgent:
         dialogues: Optional[List[Dict]] = None,
         continuity: Optional[Dict] = None,
         critique_feedback: str = "",
+        scene_asset_labels: Optional[List[str]] = None,
     ) -> str:
         """
         Build the Omni shot prompt for one scene.
@@ -298,21 +299,52 @@ class CinematographerAgent:
         # Framing & Aspect Ratio
         if self.aspect_ratio == "9:16":
             parts.append(
-                "Framing & Aspect Ratio: 9:16 vertical portrait format (full-height mobile composition, vertical framing, no letterboxing or horizontal borders)."
+                "MANDATORY FRAMING: 9:16 vertical portrait format. Full-height mobile composition, vertical framing, no letterboxing or horizontal borders."
             )
         else:
             parts.append(
-                "Framing & Aspect Ratio: 16:9 widescreen landscape format (horizontal cinematic composition)."
+                "MANDATORY FRAMING: 16:9 widescreen landscape format. Horizontal cinematic composition."
             )
 
-        # The shot itself
-        parts.append(f"Scene {n} of {total}: {drama_beat}")
+        # ── SCENE ASSETS (user-attached images for this specific shot) ────────
+        # These labels correspond to images that are sent as inline reference
+        # images in the Omni API call. Naming them here tells the model which
+        # image reference corresponds to which element in the scene.
+        if scene_asset_labels:
+            asset_items = ", ".join(f'"{label}"' for label in scene_asset_labels)
+            parts.append(
+                f"ATTACHED VISUAL ASSETS FOR THIS SHOT: {asset_items}. "
+                "These images are provided as reference inputs alongside this prompt. "
+                "You MUST prominently feature each of these assets in the video exactly "
+                "as they appear in the reference images — same colors, same details, "
+                "same composition. Do NOT substitute them with different visuals."
+            )
+
+        # The shot itself — this is the user's edited drama_beat from Director Review
+        parts.append(
+            f"SCENE {n} OF {total} — EXACT ACTION TO FILM (follow this precisely):\n{drama_beat}"
+        )
 
         # Dialogue embedded as audible voice lines with audio direction
         if dialogue_lines:
-            dialogue_str = "  ".join(dialogue_lines)
+            numbered_lines = "\n".join(
+                f"  {i + 1}. {line}" for i, line in enumerate(dialogue_lines)
+            )
             parts.append(
-                f"AUDIO & SPOKEN DIALOGUE / VOICEOVER: The video must feature clear, audible spoken voice acting with synchronized audio. {dialogue_str}. High clarity voice track with natural ambient environment sound."
+                f"MANDATORY SPOKEN DIALOGUE — The following lines MUST be spoken "
+                f"audibly and clearly in the video with voice acting:\n"
+                f"{numbered_lines}\n"
+                f"Generate clear, audible voice acting for each line above. "
+                f"High clarity voice track synchronized with character lip movements "
+                f"and natural ambient environment sound."
+            )
+        else:
+            # Explicit silence instruction when no dialogue is defined.
+            # Without this, Omni may generate random speech or narration.
+            parts.append(
+                "AUDIO: Ambient environment sound ONLY. "
+                "Absolutely NO spoken words, NO voiceover, NO narration, NO dialogue. "
+                "This scene is silent except for environmental sounds."
             )
 
         # Style
@@ -330,7 +362,8 @@ class CinematographerAgent:
 
         logger.info(
             f"[Cinematographer] Omni scene {n}/{total} "
-            f"({min(n / max(total, 1), 1.0):.0%}) prompt={len(prompt)} chars"
+            f"({min(n / max(total, 1), 1.0):.0%}) prompt={len(prompt)} chars "
+            f"dialogue_lines={len(dialogue_lines)} assets={len(scene_asset_labels or [])}"
         )
         return prompt
 
